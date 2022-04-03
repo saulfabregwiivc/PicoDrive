@@ -1316,7 +1316,7 @@ bool retro_load_game(const struct retro_game_info *info)
    PicoIn.writeSound = snd_write;
    memset(sndBuffer, 0, sizeof(sndBuffer));
    PicoIn.sndOut = sndBuffer;
-   if (PicoIn.sndRate > 52000)
+   if (PicoIn.sndRate > 52000 && PicoIn.sndRate < 54000)
       PicoIn.sndRate = YM2612_NATIVE_RATE();
    PsndRerate(0);
 
@@ -1568,7 +1568,7 @@ static void update_variables(bool first_run)
    {
       PicoDetectRegion();
       PicoLoopPrepare();
-      if (PicoIn.sndRate > 52000)
+      if (PicoIn.sndRate > 52000 && PicoIn.sndRate < 54000)
          PicoIn.sndRate = YM2612_NATIVE_RATE();
       PsndRerate(!first_run);
    }
@@ -1632,6 +1632,15 @@ static void update_variables(bool first_run)
          PicoIn.opt |= POPT_EN_FM_DAC;
       else
          PicoIn.opt &= ~POPT_EN_FM_DAC;
+   }
+
+   var.value = NULL;
+   var.key = "picodrive_fm_filter";
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+      if (strcmp(var.value, "on") == 0)
+         PicoIn.opt |= POPT_EN_FM_FILTER;
+      else
+         PicoIn.opt &= ~POPT_EN_FM_FILTER;
    }
 
    old_snd_filter = PicoIn.opt & POPT_EN_SNDFILTER;

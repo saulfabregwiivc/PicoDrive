@@ -398,7 +398,7 @@ static void vidResetMode(void)
 #define SOUND_BLOCK_SIZE_PAL  (1764*2)
 #define SOUND_BLOCK_COUNT    8
 
-static short __attribute__((aligned(4))) sndBuffer[SOUND_BLOCK_SIZE_PAL*SOUND_BLOCK_COUNT + 44100/50*2];
+static short __attribute__((aligned(4))) sndBuffer[2*SOUND_BLOCK_SIZE_PAL*SOUND_BLOCK_COUNT + 96000/50*2];
 static short *snd_playptr = NULL, *sndBuffer_endptr = NULL;
 static int samples_made = 0, samples_done = 0, samples_block = 0;
 static int sound_thread_exit = 0;
@@ -487,9 +487,9 @@ void pemu_sound_start(void)
 		}
 	}
 
-	if (PicoIn.sndRate > 52000)
-		PicoIn.sndRate = YM2612_NATIVE_RATE();
 	ret = POPT_EN_FM|POPT_EN_PSG|POPT_EN_STEREO;
+	if (PicoIn.sndRate > 52000 && PicoIn.sndRate < 54000)
+		PicoIn.sndRate = YM2612_NATIVE_RATE();
 	if (PicoIn.sndRate != PsndRate_old || (PicoIn.opt&ret) != (PicoOpt_old&ret) || Pico.m.pal != pal_old) {
 		PsndRerate(Pico.m.frame_count ? 1 : 0);
 	}
@@ -497,6 +497,7 @@ void pemu_sound_start(void)
 
 	samples_block = Pico.m.pal ? SOUND_BLOCK_SIZE_PAL : SOUND_BLOCK_SIZE_NTSC;
 	if (PicoIn.sndRate <= 22050) samples_block /= 2;
+	if (PicoIn.sndRate >= 88200) samples_block *= 2;
 	sndBuffer_endptr = &sndBuffer[samples_block*SOUND_BLOCK_COUNT];
 
 	lprintf("starting audio: %i, len: %i, stereo: %i, pal: %i, block samples: %i\n",

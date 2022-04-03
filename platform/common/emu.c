@@ -57,7 +57,7 @@ int pico_inp_mode;
 int flip_after_sync;
 int engineState = PGS_Menu;
 
-static short __attribute__((aligned(4))) sndBuffer[2*53267/50];
+static short __attribute__((aligned(4))) sndBuffer[2*96000/50];
 
 /* tmp buff to reduce stack usage for plats with small stack */
 static char static_buff[512];
@@ -1329,7 +1329,7 @@ void emu_sound_start(void)
 	PicoIn.sndOut = NULL;
 
 	// auto-select rate?
-	if (PicoIn.sndRate > 52000)
+	if (PicoIn.sndRate > 52000 && PicoIn.sndRate < 54000)
 		PicoIn.sndRate = YM2612_NATIVE_RATE();
 	if (currentConfig.EmuOpt & EOPT_EN_SOUND)
 	{

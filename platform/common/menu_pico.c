@@ -595,24 +595,25 @@ static int menu_loop_adv_options(int id, int keys)
 
 static int sndrate_prevnext(int rate, int dir)
 {
-	static const int rates[] = { 8000, 11025, 16000, 22050, 44100, 53000 };
+	static const int rates[] = { 8000, 11025, 16000, 22050, 44100, 48000, 53000, 88200, 96000 };
+	int rate_count = sizeof(rates)/sizeof(rates[0]);
 	int i;
 
-	for (i = 0; i < 6; i++)
+	for (i = 0; i < rate_count; i++)
 		if (rates[i] == rate) break;
 
 	i += dir ? 1 : -1;
-	if (i > 5) {
+	if (i >= rate_count) {
 		if (!(PicoIn.opt & POPT_EN_STEREO)) {
 			PicoIn.opt |= POPT_EN_STEREO;
 			return rates[0];
 		}
-		return rates[5];
+		return rates[rate_count-1];
 	}
 	if (i < 0) {
 		if (PicoIn.opt & POPT_EN_STEREO) {
 			PicoIn.opt &= ~POPT_EN_STEREO;
-			return rates[5];
+			return rates[rate_count-1];
 		}
 		return rates[0];
 	}
@@ -630,8 +631,8 @@ static const char *mgn_opt_sound(int id, int *offs)
 	const char *str2;
 	*offs = -8;
 	str2 = (PicoIn.opt & POPT_EN_STEREO) ? "stereo" : "mono";
-	if (PicoIn.sndRate > 52000)
-		sprintf(static_buff, "native %s", str2);
+	if (PicoIn.sndRate > 52000 && PicoIn.sndRate < 54000)
+		sprintf(static_buff, "native  %s", str2);
 	else	sprintf(static_buff, "%5iHz %s", PicoIn.sndRate, str2);
 	return static_buff;
 }
@@ -654,14 +655,14 @@ static const char *mgn_opt_alpha(int id, int *offs)
 	return static_buff;
 }
 
-static const char h_quality[] = "native is the FM sound chip rate (53267/52781 Hz),\n"
-				"select this for the best FM sound quality";
+static const char h_fmfilter[] = "FM resampling filter, higher accuracy but slower";
 static const char h_lowpass[] = "Low pass filter for sound closer to real hardware";
 
 static menu_entry e_menu_snd_options[] =
 {
 	mee_onoff     ("Enable sound",    MA_OPT_ENABLE_SOUND,  currentConfig.EmuOpt, EOPT_EN_SOUND),
-	mee_cust_h    ("Sound Quality",   MA_OPT_SOUND_QUALITY, mh_opt_snd, mgn_opt_sound, h_quality),
+	mee_cust      ("Sound Quality",   MA_OPT_SOUND_QUALITY, mh_opt_snd, mgn_opt_sound),
+	mee_onoff_h   ("FM filtering",    MA_OPT_FM_FILTER,     PicoIn.opt, POPT_EN_FM_FILTER, h_fmfilter),
 	mee_onoff_h   ("Sound filter",    MA_OPT_SOUND_FILTER,  PicoIn.opt, POPT_EN_SNDFILTER, h_lowpass),
 	mee_cust      ("Filter strength", MA_OPT_SOUND_ALPHA,   mh_opt_alpha, mgn_opt_alpha),
 	mee_end,
@@ -671,7 +672,7 @@ static int menu_loop_snd_options(int id, int keys)
 {
 	static int sel = 0;
 
-	if (PicoIn.sndRate > 52000)
+	if (PicoIn.sndRate > 52000 && PicoIn.sndRate < 54000)
 		PicoIn.sndRate = 53000;
 	me_loop(e_menu_snd_options, &sel);
 

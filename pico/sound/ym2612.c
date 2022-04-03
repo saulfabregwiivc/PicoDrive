@@ -891,12 +891,13 @@ typedef struct
 	UINT16 vol_out2;
 	UINT16 vol_out3;
 	UINT16 vol_out4;
-	UINT32 pad[2];
-	UINT32 phase1;   /* 10 */
+	INT16  last[2];  /* 08: last sample values (for interpolation) */
+	UINT32 pad[1];
+	UINT32 phase1;   /* 10: phases */
 	UINT32 phase2;
 	UINT32 phase3;
 	UINT32 phase4;
-	UINT32 incr1;    /* 20: phase step */
+	UINT32 incr1;    /* 20: phase steps */
 	UINT32 incr2;
 	UINT32 incr3;
 	UINT32 incr4;
@@ -904,7 +905,7 @@ typedef struct
 	UINT32 lfo_inc;
 	INT32  mem;      /* one sample delay memory */
 	UINT32 eg_cnt;   /* envelope generator counter */
-	FM_CH  *CH;      /* 40: envelope generator counter */
+	FM_CH  *CH;      /* 40 */
 	UINT32 eg_timer;
 	UINT32 eg_timer_add;
 	UINT32 pack;     // 4c: stereo, lastchan, disabled, lfo_enabled | pan_r, pan_l, ams[2] | AMmasks[4] | FB[4] | lfo_ampm[16]
@@ -1122,14 +1123,16 @@ static int update_algo_channel(chan_rend_context *ct, unsigned int eg_out, unsig
 static void chan_render_loop(chan_rend_context *ct, s32 *buffer, int length)
 {
 	int scounter;					/* sample counter */
+	int smp, mix;					/* produced sample */
 
 	/* sample generating loop */
+	smp = ct->last[1];
 	for (scounter = 0; scounter < length; scounter++)
 	{
-		int smp = 0;		/* produced sample */
 		unsigned int eg_out, eg_out2, eg_out4;
 
 		ct->eg_timer += ct->eg_timer_add;
+		if (ct->eg_timer < 1<<EG_SH) goto same; // no new sample
 
 		while (ct->eg_timer >= 1<<EG_SH) {
 			ct->eg_timer -= 1<<EG_SH;
@@ -1153,6 +1156,8 @@ static void chan_render_loop(chan_rend_context *ct, s32 *buffer, int length)
 		ct->vol_out3 =  ct->CH->SLOT[SLOT3].vol_out;
 		ct->vol_out4 =  ct->CH->SLOT[SLOT4].vol_out;
 
+		ct->last[0] = smp;
+		smp = 0;
 		if (ct->pack & 4) goto disabled; /* output disabled */
 
 		if (ct->pack & 8) { /* LFO enabled ? (test Earthworm Jim in between demo 1 and 2) */
@@ -1196,24 +1201,33 @@ disabled:
 		ct->phase3 += ct->incr3;
 		ct->phase4 += ct->incr4;
 
-		/* mix sample to output buffer */
 		if (smp) {
 			smp = clip(smp); /* saturate to 14 bit */
 			if (ct->algo & 0x80) {
 				smp &= ~0x1f; /* drop bits (DAC has 9 bits) */
 				smp -= (smp < 0 ? 7:0) << 5; /* discontinuity */
 			}
-			if (ct->pack & 1) { /* stereo */
-				if (ct->pack & 0x20) /* L */ /* TODO: check correctness */
-					buffer[scounter*2] += smp;
-				if (ct->pack & 0x10) /* R */
-					buffer[scounter*2+1] += smp;
-			} else {
-				buffer[scounter] += smp;
-			}
 			ct->algo |= 8;
 		}
+same:
+		/* mix sample to output buffer */
+		mix = smp;
+		if (ct->eg_timer_add < 1<<EG_SH) {
+			mix = ct->eg_timer;
+			mix = (smp*mix + (ct->last[0])*((1<<EG_SH)-mix))>>EG_SH;
+		}
+		if (mix) {
+			if (ct->pack & 1) { /* stereo */
+				if (ct->pack & 0x20) /* L */ /* TODO: check correctness */
+					buffer[scounter*2] += mix;
+				if (ct->pack & 0x10) /* R */
+					buffer[scounter*2+1] += mix;
+			} else {
+				buffer[scounter] += mix;
+			}
+		}
 	}
+	ct->last[1] = smp;
 }
 #else
 void chan_render_loop(chan_rend_context *ct, s32 *buffer, unsigned short length);
@@ -1296,6 +1310,9 @@ static int chan_render(s32 *buffer, int length, int c, UINT32 flags) // flags: s
 	if (ym2612.OPN.ST.flags & ST_DAC)
 		crct.algo |= 0x80;
 
+	crct.last[0] = crct.CH->last[0];
+	crct.last[1] = crct.CH->last[1];
+
 	if(crct.CH->pms && (ym2612.OPN.ST.mode & 0xC0) && c == 2) {
 		/* 3 slot mode */
 		crct.incr1 = update_lfo_phase(&crct.CH->SLOT[SLOT1], ym2612.OPN.SL3.block_fnum[1]);
@@ -1332,6 +1349,9 @@ static int chan_render(s32 *buffer, int length, int c, UINT32 flags) // flags: s
 	else
 		ym2612.slot_mask &= ~(0xf << (c*4));
 	crct.CH->upd_cnt = (crct.algo >> 4) & 0x7;
+
+	crct.CH->last[0] = crct.last[0];
+	crct.CH->last[1] = crct.last[1];
 
 	return (crct.algo & 8) >> 3; // had output
 }
@@ -1587,7 +1607,9 @@ static void OPNSetPres(int pres)
 	double freqbase = (ym2612.OPN.ST.rate) ? ((double)ym2612.OPN.ST.clock / ym2612.OPN.ST.rate) / pres : 0;
 
 	ym2612.OPN.eg_timer_add  = (1<<EG_SH) * freqbase;
-	ym2612.OPN.ST.freqbase = freqbase;
+	/* compute any rate above the internal rate at internal rate */
+	/* linear interpolation upsampling is done in render_loop */
+	ym2612.OPN.ST.freqbase = (freqbase < 1.0 ? 1.0 : freqbase);
 
 	/* make time tables */
 	init_timetables( dt_tab );

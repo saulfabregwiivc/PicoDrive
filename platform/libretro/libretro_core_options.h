@@ -215,10 +215,27 @@ struct retro_core_option_v2_definition option_defs_us[] = {
          { "22050", NULL },
          { "32000", NULL },
          { "44100", NULL },
+         { "48000", NULL },
+         { "88200", NULL },
+         { "96000", NULL },
          { "native", NULL },
          { NULL, NULL },
       },
       "44100"
+   },
+   {
+      "picodrive_fm_filter",
+      "FM filtering",
+      NULL,
+      "Enable filtering for Mega Drive FM sound. Sound output at bitrates below 50KHz will improve, at the price of being slower",
+      NULL,
+      "audio",
+      {
+         { "off", "disabled" },
+         { "on",  "enabled" },
+         { NULL, NULL },
+      },
+      "off"
    },
    {
       "picodrive_smsfm",

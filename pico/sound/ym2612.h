@@ -86,6 +86,7 @@ typedef struct
 	/* LFO */
 	UINT8	AMmasks;	/* AM enable flag */
 	UINT8	pad3[3];
+	INT16   last[2];        /* sample history */
 } FM_CH;
 
 typedef struct

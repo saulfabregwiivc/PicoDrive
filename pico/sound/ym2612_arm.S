@@ -662,7 +662,7 @@
 
 @ lr=context, r12=pack (stereo, ssg_enabled, disabled, lfo_enabled | pan_r, pan_l, ams[2] | AMmasks[4] | FB[4] | lfo_ampm[16])
 @ r0-r2=scratch, r3=sin_tab/scratch, r4=(length<<8)|dac,upd_cnt[3],was_update,algo[3], r5=tl_tab/slot,
-@ r6-r7=vol_out[4], r8=eg_timer, r9=eg_timer_add[31:16], r10=op1_out, r11=buffer
+@ r6-r7=vol_out[4], r8=eg_timer, r9=eg_timer_add, r10=op1_out, r11=buffer
 .global chan_render_loop @ chan_rend_context *ct, int *buffer, int length
 
 chan_render_loop:
@@ -672,25 +672,27 @@ chan_render_loop:
     ldr     r12, [lr, #0x4c]
     ldr     r0,  [lr, #0x50]
     mov     r11, r1
-    and     r0,  r0, #0xf7
-    orr     r4,  r4, r0          @ (length<<8)|dac,upd_cnt[2],unused,algo[3]
+    and     r1,  r0, #0xf7
+    orr     r4,  r4, r1          @ (length<<8)|dac,upd_cnt[2],unused,algo[3]
+    ldrsh   r0, [lr, #0x0a]      @ last[1]
     ldr     r8, [lr, #0x44]      @ eg_timer
     ldr     r9, [lr, #0x48]      @ eg_timer_add
     ldr     r10, [lr, #0x54]     @ op1_out
 
-crl_loop:
     subs    r4, r4, #0x100
     bmi     crl_loop_end
+crl_loop:
 
-    mov     r0, #0
+    ldr     r5, [lr, #0x40]      @ CH
     add     r8, r8, r9
     subs    r8, r8, #(1<<EG_SH)
-    blt     eg_loop_done
+    blt     ctl_sample_store
+
+    strh    r0, [lr, #0x08]      @ last[0]
 
 crl_eg_loop:
-    ldr     r5, [lr, #0x40]      @ CH
 #if defined(SSG_EG)
-    tst     r12, #0x02              @ ssg_enabled?
+    tst     r12, #0x02           @ ssg_enabled?
     beq     ssg_done
 
     @ -- SSG --
@@ -750,8 +752,6 @@ eg_done:
     bge     crl_eg_loop
 
 eg_loop_done:
-    add     r8, r8, #(1<<EG_SH)
-
     @ -- disabled? --
     mov     r0, #0
     tst     r12, #0x4
@@ -855,7 +855,7 @@ crl_algo_done:
 crl_smp_loop_end:
     @ -- WRITE SAMPLE --
     tst     r0, r0
-    beq     ctl_sample_skip
+    beq     ctl_sample_store
     orr     r4, r4, #8              @ have_output
     lsr     r1, r0, #31             @ clip (saturate) sample to 14 bit
     cmn     r1, r0, asr #13
@@ -864,37 +864,59 @@ crl_smp_loop_end:
     tst     r4, r1, lsl #7          @ (sample < 0) && dac?
     bicne   r0, r0, #0x1f
     subne   r0, r0, #7<<5
+
+ctl_sample_store:
+    ldrsh   r3, [lr, #0x08]
+    add     r8, r8, #(1<<EG_SH)
+    cmp     r9, #(1<<EG_SH)
+    mullt   r2, r0, r8
+    rsblt   r1, r8, #(1<<EG_SH)
+    mlalt   r2, r3, r1, r2
+    lslge   r2, r0, #16
+
+    cmp     r2, #0
+    beq     ctl_sample_skip
     tst     r12, #1
     beq     ctl_sample_mono
 
     tst     r12, #0x20              @ L
     ldrne   r1, [r11]
     addeq   r11, r11, #4
-    addne   r1, r0, r1
+    addne   r1, r1, r2, asr #16
     strne   r1, [r11], #4
     tst     r12, #0x10              @ R
     ldrne   r1, [r11]
     addeq   r11, r11, #4
-    addne   r1, r0, r1
+    addne   r1, r1, r2, asr #16
     strne   r1, [r11], #4
-    b       crl_loop
+
+    subs    r4, r4, #0x100
+    bpl     crl_loop
+    b       crl_loop_end
 
 ctl_sample_mono:
     ldr     r1, [r11]
-    add     r1, r0, r1
+    add     r1, r1, r2, asr #16
     str     r1, [r11], #4
-    b       crl_loop
+
+    subs    r4, r4, #0x100
+    bpl     crl_loop
+    b       crl_loop_end
 
 ctl_sample_skip:
     and     r1, r12, #1
     add     r1, r1,  #1
     add     r11,r11, r1, lsl #2
-    b       crl_loop
+
+    subs    r4, r4, #0x100
+    bpl     crl_loop
+    b       crl_loop_end
 
 crl_loop_end:
     str     r8,  [lr, #0x44]     @ eg_timer
     str     r12, [lr, #0x4c]     @ pack (for lfo_ampm)
-    str     r4,  [lr, #0x50]     @ was_update
+    strh    r4,  [lr, #0x50]     @ was_update
+    strh    r0,  [lr, #0x0a]     @ last[1]
     str     r10, [lr, #0x54]     @ op1_out
     ldmfd   sp!, {r4-r11,pc}
 

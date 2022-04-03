@@ -206,7 +206,7 @@ void resampler_update(resampler_t *rs, s32 *buffer, int length,
    * inlen = (length*decimation + interpolation-phase) / interpolation */
   n = length*rs->decimation + rs->interpolation-rs->phase;
   inlen = ((u64)n * rs->interp_inv) >> 32; /* input samples, n/interpolation */
-  if (inlen * rs->interpolation < n - rs->interpolation) inlen++; /* rounding */
+  if (n - inlen * rs->interpolation > rs->interpolation) inlen++; /* rounding */
 
   /* reset buffer to start if the input doesn't fit into the buffer */
   if (rs->buffer_idx + inlen+rs->taps >= rs->buffer_sz) {
