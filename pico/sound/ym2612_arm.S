@@ -671,9 +671,9 @@ chan_render_loop:
     mov     r4,  r2, lsl #8      @ no more 24 bits here
     ldr     r12, [lr, #0x4c]
     ldr     r0,  [lr, #0x50]
-    mov     r11, r1
-    and     r1,  r0, #0xf7
-    orr     r4,  r4, r1          @ (length<<8)|dac,upd_cnt[2],unused,algo[3]
+    mov     r11, r0
+    and     r0,  r0, #0xf7
+    orr     r4,  r4, r0          @ (length<<8)|dac,upd_cnt[2],unused,algo[3]
     ldrsh   r0, [lr, #0x0a]      @ last[1]
     ldr     r8, [lr, #0x44]      @ eg_timer
     ldr     r9, [lr, #0x48]      @ eg_timer_add
@@ -915,7 +915,7 @@ ctl_sample_skip:
 crl_loop_end:
     str     r8,  [lr, #0x44]     @ eg_timer
     str     r12, [lr, #0x4c]     @ pack (for lfo_ampm)
-    strh    r4,  [lr, #0x50]     @ was_update
+    str     r4,  [lr, #0x50]     @ was_update
     strh    r0,  [lr, #0x0a]     @ last[1]
     str     r10, [lr, #0x54]     @ op1_out
     ldmfd   sp!, {r4-r11,pc}

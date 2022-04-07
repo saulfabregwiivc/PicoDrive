@@ -14,7 +14,9 @@
 #include "mix.h"
 #include "emu2413/emu2413.h"
 
-#ifdef USE_BLIPPER
+#define USE_RESAMPLER	1
+
+#if USE_BLIPPER
 #include "blipper.h"
 #else
 #include "resampler.h"
@@ -38,7 +40,7 @@ OPLL old_opll;
 static OPLL *opll = NULL;
 unsigned YM2413_reg;
 
-#ifdef USE_BLIPPER
+#if USE_BLIPPER
 static blipper_t *fmlblip, *fmrblip;
 #else
 static resampler_t *fmresampler;
@@ -56,7 +58,7 @@ PICO_INTERNAL void PsndExit(void)
   OPLL_delete(opll);
   opll = NULL;
 
-#ifdef USE_BLIPPER
+#if USE_BLIPPER
   blipper_free(fmlblip); fmlblip = NULL;
   blipper_free(fmrblip); fmrblip = NULL;
 #else
@@ -73,9 +75,10 @@ PICO_INTERNAL void PsndReset(void)
 
 int (*PsndFMUpdate)(s32 *buffer, int length, int stereo, int is_buf_empty);
 
+#if USE_RESAMPLER
 // FM polyphase FIR resampling
 
-#ifdef USE_BLIPPER
+#if USE_BLIPPER
 #define FMFIR_TAPS	11
 
 // resample FM from its native 53267Hz/52781Hz with the blipper library
@@ -91,7 +94,7 @@ int YM2612UpdateFIR(s32 *buffer, int length, int stereo, int is_buf_empty)
   if (length <= 0) return ret;
 
   // FM samples needed: (length*div + div-blipper_read_phase(fmlblip)) / mul
-  ymlen = ((length*div + div-blipper_read_phase(fmlblip)) * ymmulinv) >> 32;
+  ymlen = ((u64)(length*div + div-blipper_read_phase(fmlblip)) * ymmulinv) >> 32;
   if (ymlen > 0)
     ret = YM2612UpdateOne(p, ymlen, stereo, is_buf_empty);
 
@@ -112,19 +115,20 @@ static void YM2612_setup_FIR(int inrate, int outrate, int stereo)
 {
   int mindiff = 999;
   int diff, mul, div;
-  int maxdecim = 1500/FMFIR_TAPS;
+  int minmult=22, maxmult = 55; // max interpolation factor
 
-  // compute filter ratio with smallest error for a decent number of taps
-  for (div = maxdecim/2; div <= maxdecim; div++) {
-    mul = (outrate*div + inrate/2) / inrate;
+  // compute filter ratio with largest multiplier for smallest error
+  for (mul = minmult; mul <= maxmult; mul++) {
+    div = (inrate*mul + outrate/2) / outrate;
     diff = outrate*div/mul - inrate;
     if (abs(diff) < abs(mindiff)) {
       mindiff = diff;
       Pico.snd.fm_fir_mul = mul;
       Pico.snd.fm_fir_div = div;
+      if (abs(mindiff) <= inrate/1000) break;
     }
   }
-  ymmulinv = 0x100000000ULL / mul; /* 1/mul in Q32 */
+  ymmulinv = (1ULL << 32) / mul; /* 1/mul in Q32 */
   printf("FM polyphase FIR ratio=%d/%d error=%.3f%%\n",
         Pico.snd.fm_fir_mul, Pico.snd.fm_fir_div, 100.0*mindiff/inrate);
 
@@ -137,7 +141,7 @@ static void YM2612_setup_FIR(int inrate, int outrate, int stereo)
   fmrblip = blipper_new(FMFIR_TAPS, 0.85, 8.5, Pico.snd.fm_fir_div, 1000, NULL);
 }
 #else
-#define FMFIR_TAPS	8
+#define FMFIR_TAPS	9
 
 // resample FM from its native 53267Hz/52781Hz with polyphase FIR filter
 static int ymchans;
@@ -156,16 +160,17 @@ static void YM2612_setup_FIR(int inrate, int outrate, int stereo)
 {
   int mindiff = 999;
   int diff, mul, div;
-  int maxmult = 30; // max interpolation factor
+  int minmult = 22, maxmult = 55; // min,max interpolation factor
 
   // compute filter ratio with largest multiplier for smallest error
-  for (mul = maxmult/2; mul <= maxmult; mul++) {
+  for (mul = minmult; mul <= maxmult; mul++) {
     div = (inrate*mul + outrate/2) / outrate;
     diff = outrate*div/mul - inrate;
-    if (abs(diff) <= abs(mindiff)) {
+    if (abs(diff) < abs(mindiff)) {
       mindiff = diff;
       Pico.snd.fm_fir_mul = mul;
       Pico.snd.fm_fir_div = div;
+      if (abs(mindiff) <= inrate/2000) break; // min error limit hit
     }
   }
   printf("FM polyphase FIR ratio=%d/%d error=%.3f%%\n",
@@ -173,7 +178,59 @@ static void YM2612_setup_FIR(int inrate, int outrate, int stereo)
 
   resampler_free(fmresampler);
   fmresampler = resampler_new(FMFIR_TAPS, Pico.snd.fm_fir_mul, Pico.snd.fm_fir_div,
-        0.85, 2.35, 2*inrate/50, stereo);
+        0.85, 2, 2*inrate/50, stereo);
+}
+#endif
+
+#else
+static s32 hh[2*8];
+static s32 hm;
+
+int YM2612UpdateAVG(s32 *buffer, int length, int stereo, int is_buf_empty)
+{
+  int spf = (stereo?2:1);
+  int hs = 1 << hm;
+  int inlen = length * hs;
+  s32 *p = buffer, *q = buffer;
+  s32 l, r;
+  s32 i, ch;
+
+  // generate samples in buffer (2*length)
+  memcpy(p, hh, hs*spf*sizeof(s32));
+  ch = YM2612UpdateOne(p + hs*spf, inlen, stereo, 1);
+
+  // hs-point averaging filter, cutoff 0.5/hs, gain hs. Since only every hs'th
+  // uutput sample iis needed, this collapses to a stepwise sum folding hs input
+  // samples into 1 output sample. Absolutely one of the worst filters to have,
+  // but better than nothing and very fast. Together with the interpolated
+  // upsampling in YM2612 it does an acceptable job at attenuating aliasing,
+  // albeit with a mediocre passband perfomance (shhhh!).
+  if (stereo) {
+    while (--length >= 0) {
+      l = r = 0;
+      for (i = 0; i < hs; i += 2) {
+        l += *p++, r += *p++;
+        l += *p++, r += *p++;
+      }
+      *q++ = l >> hm, *q++ = r >> hm;
+    }
+  } else {
+    while (--length >= 0) {
+      l = 0;
+      for (i = 0; i < hs; i += 2) {
+        l += *p++;
+        l += *p++;
+      }
+      *q++ = l >> hm;
+    }
+  }
+  memcpy(hh, p, hs*spf*sizeof(s32));
+  return ch;
+}
+
+static void YM2612_setup_AVG(int inrate, int outrate, int stereo)
+{
+  for (hm = 0; inrate > outrate; hm++, inrate /= 2) ;
 }
 #endif
 
@@ -193,11 +250,24 @@ void PsndRerate(int preserve_state)
   }
   if (PicoIn.opt & POPT_EN_FM_FILTER) {
     int ym2612_rate = (ym2612_clock+(6*24)/2) / (6*24);
+#if USE_RESAMPLER
+    // polyphase FIR resampler, resampling directly from native to output rate
     YM2612Init(ym2612_clock, ym2612_rate,
         ((PicoIn.opt&POPT_DIS_FM_SSGEG) ? 0 : ST_SSG) |
         ((PicoIn.opt&POPT_EN_FM_DAC)    ? ST_DAC : 0));
     YM2612_setup_FIR(ym2612_rate, PicoIn.sndRate, PicoIn.opt & POPT_EN_STEREO);
     PsndFMUpdate = YM2612UpdateFIR;
+#else
+    // Do linear interpolation upsampling to a multiple of the output rate in
+    // YM2612, then downsample by averaging here
+    int overrate = PicoIn.sndRate;
+    while (overrate < ym2612_rate) overrate *= 2;
+    YM2612Init(ym2612_clock, overrate,
+        ((PicoIn.opt&POPT_DIS_FM_SSGEG) ? 0 : ST_SSG) |
+        ((PicoIn.opt&POPT_EN_FM_DAC)    ? ST_DAC : 0));
+    YM2612_setup_AVG(overrate, PicoIn.sndRate, PicoIn.opt & POPT_EN_STEREO);
+    PsndFMUpdate = overrate != PicoIn.sndRate ? YM2612UpdateAVG:YM2612UpdateOne;
+#endif
   } else {
     YM2612Init(ym2612_clock, PicoIn.sndRate,
         ((PicoIn.opt&POPT_DIS_FM_SSGEG) ? 0 : ST_SSG) |
