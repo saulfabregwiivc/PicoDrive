@@ -671,7 +671,7 @@ chan_render_loop:
     mov     r4,  r2, lsl #8      @ no more 24 bits here
     ldr     r12, [lr, #0x4c]
     ldr     r0,  [lr, #0x50]
-    mov     r11, r0
+    mov     r11, r1
     and     r0,  r0, #0xf7
     orr     r4,  r4, r0          @ (length<<8)|dac,upd_cnt[2],unused,algo[3]
     ldrsh   r0, [lr, #0x0a]      @ last[1]
@@ -683,11 +683,11 @@ chan_render_loop:
     bmi     crl_loop_end
 crl_loop:
 
-    ldr     r5, [lr, #0x40]      @ CH
     add     r8, r8, r9
     subs    r8, r8, #(1<<EG_SH)
     blt     ctl_sample_store
 
+    ldr     r5, [lr, #0x40]      @ CH
     strh    r0, [lr, #0x08]      @ last[0]
 
 crl_eg_loop:

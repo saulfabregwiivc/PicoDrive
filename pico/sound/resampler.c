@@ -154,7 +154,7 @@ resampler_t *resampler_new(unsigned taps, unsigned interpolation, unsigned decim
 
    /* :cutoff is relative to the decimated frequency, but filtering is taking
     * place at the interpolated frequency. It needs to be adapted if resampled
-    * rate is lower. Also needs more taps to keep the transistion band width */
+    * rate is lower. Also needs more taps to keep the transition band width */
    if (decimation > interpolation) {
       cutoff = cutoff * interpolation/decimation;
       taps = taps * decimation/interpolation;
@@ -224,10 +224,10 @@ void resampler_update(resampler_t *rs, s32 *buffer, int length,
       /* compute filter output */
       s32 *h = p;
       u = rs->filter + (rs->phase * rs->taps);
-      for (i = rs->taps, l = r = 0; i > 1; i -= 2)
+      for (i = rs->taps-1, l = r = 0; i > 0; i -= 2)
         { n = *u++; l += n * *h++; r += n * *h++;  
           n = *u++; l += n * *h++; r += n * *h++; }
-      if (i)
+      if (i == 0)
         { n = *u++; l += n * *h++; r += n * *h++; }
       *q++ = l >> 15, *q++ = r >> 15;
       /* advance position to next sample */
@@ -244,10 +244,10 @@ void resampler_update(resampler_t *rs, s32 *buffer, int length,
       /* compute filter output */
       s32 *h = p;
       u = rs->filter + (rs->phase * rs->taps);
-      for (i = rs->taps, l = r = 0; i > 1; i -= 2)
+      for (i = rs->taps-1, l = r = 0; i > 0; i -= 2)
         { n = *u++; l += n * *h++;
           n = *u++; l += n * *h++; }
-      if (i)
+      if (i == 0)
         { n = *u++; l += n * *h++; }
       *q++ = l >> 15;
       /* advance position to next sample */

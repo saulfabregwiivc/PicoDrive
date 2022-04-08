@@ -170,7 +170,7 @@ static void YM2612_setup_FIR(int inrate, int outrate, int stereo)
       mindiff = diff;
       Pico.snd.fm_fir_mul = mul;
       Pico.snd.fm_fir_div = div;
-      if (abs(mindiff) <= inrate/2000) break; // min error limit hit
+      if (abs(mindiff) <= inrate/2000) break; // below error limit
     }
   }
   printf("FM polyphase FIR ratio=%d/%d error=%.3f%%\n",
@@ -183,6 +183,7 @@ static void YM2612_setup_FIR(int inrate, int outrate, int stereo)
 #endif
 
 #else
+static u32 hu, hi;
 static s32 hh[2*8];
 static s32 hm;
 
@@ -191,20 +192,39 @@ int YM2612UpdateAVG(s32 *buffer, int length, int stereo, int is_buf_empty)
   int spf = (stereo?2:1);
   int hs = 1 << hm;
   int inlen = length * hs;
-  s32 *p = buffer, *q = buffer;
+  s32 *p, *q;
   s32 l, r;
-  s32 i, ch;
+  s32 i, n, ch;
 
-  // generate samples in buffer (2*length)
-  memcpy(p, hh, hs*spf*sizeof(s32));
-  ch = YM2612UpdateOne(p + hs*spf, inlen, stereo, 1);
+  // generate samples in buffer (2*length out of samples at native rate)
+  l = ((u64)hu + (u64)inlen*hi) >> 16;
+  p = buffer + (inlen-l)*spf, q = buffer + spf;
+  ch = YM2612UpdateOne(p+spf, l, stereo, 1);
 
-  // hs-point averaging filter, cutoff 0.5/hs, gain hs. Since only every hs'th
-  // uutput sample iis needed, this collapses to a stepwise sum folding hs input
-  // samples into 1 output sample. Absolutely one of the worst filters to have,
-  // but better than nothing and very fast. Together with the interpolated
-  // upsampling in YM2612 it does an acceptable job at attenuating aliasing,
-  // albeit with a mediocre passband perfomance (shhhh!).
+#if 0
+  // upsampling by linear interpolation. Lowpass, 1st sidelobe @ about -26 dB 
+  memcpy(p, hh, spf*sizeof(s32));
+  if (stereo) {
+    for (i = 0; i < inlen; i++) {
+      n = hu;
+      *q++ = (p[0]*((1<<16)-n) + p[2]*n) >> 16;
+      *q++ = (p[1]*((1<<16)-n) + p[3]*n) >> 16;
+      hu += hi;
+      p += (hu >> 16) * 2;
+      hu = (u16) hu;
+    }
+  } else { 
+    for (i = 0; i < inlen; i++) {
+      n = hu;
+      *q++ = (p[0]*((1<<16)-n) + p[1]*n) >> 16;
+      hu += hi;
+      p += (hu >> 16);
+      hu = (u16) hu;
+    }
+  }
+  memcpy(hh, p, spf*sizeof(s32));
+
+  p = buffer, q = buffer;
   if (stereo) {
     while (--length >= 0) {
       l = r = 0;
@@ -224,12 +244,63 @@ int YM2612UpdateAVG(s32 *buffer, int length, int stereo, int is_buf_empty)
       *q++ = l >> hm;
     }
   }
-  memcpy(hh, p, hs*spf*sizeof(s32));
+#else
+  // hs-point averaging filter, cutoff 0.5/hs, gain hs. Since only every hs'th
+  // output sample is needed, this collapses to a stepwise sum folding hs input
+  // samples into 1 output sample. Absolutely one of the worst filters to have,
+  // but better than nothing and very fast. Together with the interpolated
+  // upsampling in YM2612 it does an acceptable job at attenuating aliasing,
+  // albeit with a mediocre passband perfomance (shhhh!).
+  memcpy(p, hh, spf*sizeof(s32));
+  if (stereo) {
+    while (--length >= 0) {
+      l = r = 0;
+      for (i = 0; i < hs; i += 2) {
+        // linear interpolation upsampler. Lowpass, 1st sidelobe @ about -26 dB
+        n = hu;
+	l += (p[0]*((1<<16)-n) + p[2]*n) >> 16;
+	r += (p[1]*((1<<16)-n) + p[3]*n) >> 16;
+        hu += hi;
+        p += (hu >> 16) * 2;
+        hu = (u16) hu;
+
+        n = hu;
+	l += (p[0]*((1<<16)-n) + p[2]*n) >> 16;
+	r += (p[1]*((1<<16)-n) + p[3]*n) >> 16;
+        hu += hi;
+        p += (hu >> 16) * 2;
+        hu = (u16) hu;
+      }
+      *q++ = l >> hm, *q++ = r >> hm;
+    }
+  } else {
+    while (--length >= 0) {
+      l = 0;
+      for (i = 0; i < hs; i += 2) {
+        n = hu;
+	l += (p[0]*((1<<16)-n) + p[1]*n) >> 16;
+        hu += hi;
+        p += (hu >> 16);
+        hu = (u16) hu;
+
+        n = hu;
+	l += (p[0]*((1<<16)-n) + p[1]*n) >> 16;
+        hu += hi;
+        p += (hu >> 16);
+        hu = (u16) hu;
+      }
+      *q++ = l >> hm;
+    }
+  }
+  memcpy(hh, p, spf*sizeof(s32));
+#endif
+
   return ch;
 }
 
-static void YM2612_setup_AVG(int inrate, int outrate, int stereo)
+static void YM2612_setup_AVG(int ymrate, int inrate, int outrate)
 {
+  hu = 0; hi = ((u64)ymrate << 16) / inrate;
   for (hm = 0; inrate > outrate; hm++, inrate /= 2) ;
 }
 #endif
@@ -262,10 +333,10 @@ void PsndRerate(int preserve_state)
     // YM2612, then downsample by averaging here
     int overrate = PicoIn.sndRate;
     while (overrate < ym2612_rate) overrate *= 2;
-    YM2612Init(ym2612_clock, overrate,
+    YM2612Init(ym2612_clock, overrate != PicoIn.sndRate ? ym2612_rate : PicoIn.sndRate,
         ((PicoIn.opt&POPT_DIS_FM_SSGEG) ? 0 : ST_SSG) |
         ((PicoIn.opt&POPT_EN_FM_DAC)    ? ST_DAC : 0));
-    YM2612_setup_AVG(overrate, PicoIn.sndRate, PicoIn.opt & POPT_EN_STEREO);
+    YM2612_setup_AVG(ym2612_rate, overrate, PicoIn.sndRate);
     PsndFMUpdate = overrate != PicoIn.sndRate ? YM2612UpdateAVG:YM2612UpdateOne;
 #endif
   } else {
