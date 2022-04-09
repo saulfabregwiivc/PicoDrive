@@ -191,21 +191,22 @@ int YM2612UpdateAVG(s32 *buffer, int length, int stereo, int is_buf_empty)
 {
   int spf = (stereo?2:1);
   int hs = 1 << hm;
-  int inlen = length * hs;
+  int inlen;
   s32 *p, *q;
   s32 l, r;
   s32 i, n, ch;
 
   // generate samples in buffer (2*length out of samples at native rate)
-  l = ((u64)hu + (u64)inlen*hi) >> 16;
-  p = buffer + (inlen-l)*spf, q = buffer + spf;
-  ch = YM2612UpdateOne(p+spf, l, stereo, 1);
+  inlen = ((u64)hu + (length<<hm)*(u64)hi) >> 16;
+  p = buffer + ((length<<hm)-inlen)*spf, q = buffer;
+  ch = YM2612UpdateOne(p+2*spf, inlen, stereo, 1);
 
 #if 0
   // upsampling by linear interpolation. Lowpass, 1st sidelobe @ about -26 dB 
-  memcpy(p, hh, spf*sizeof(s32));
+  memcpy(p, hh, 2*spf*sizeof(s32));
+  q = buffer + spf;
   if (stereo) {
-    for (i = 0; i < inlen; i++) {
+    for (i = 0; i < length<<hm; i++) {
       n = hu;
       *q++ = (p[0]*((1<<16)-n) + p[2]*n) >> 16;
       *q++ = (p[1]*((1<<16)-n) + p[3]*n) >> 16;
@@ -214,7 +215,7 @@ int YM2612UpdateAVG(s32 *buffer, int length, int stereo, int is_buf_empty)
       hu = (u16) hu;
     }
   } else { 
-    for (i = 0; i < inlen; i++) {
+    for (i = 0; i < length<<hm; i++) {
       n = hu;
       *q++ = (p[0]*((1<<16)-n) + p[1]*n) >> 16;
       hu += hi;
@@ -222,9 +223,9 @@ int YM2612UpdateAVG(s32 *buffer, int length, int stereo, int is_buf_empty)
       hu = (u16) hu;
     }
   }
-  memcpy(hh, p, spf*sizeof(s32));
+  memcpy(hh, p, 2*spf*sizeof(s32));
 
-  p = buffer, q = buffer;
+  p = buffer + spf, q = buffer;
   if (stereo) {
     while (--length >= 0) {
       l = r = 0;
@@ -251,48 +252,37 @@ int YM2612UpdateAVG(s32 *buffer, int length, int stereo, int is_buf_empty)
   // but better than nothing and very fast. Together with the interpolated
   // upsampling in YM2612 it does an acceptable job at attenuating aliasing,
   // albeit with a mediocre passband perfomance (shhhh!).
-  memcpy(p, hh, spf*sizeof(s32));
+  memcpy(p, hh, 2*spf*sizeof(s32));
   if (stereo) {
     while (--length >= 0) {
       l = r = 0;
-      for (i = 0; i < hs; i += 2) {
+      for (i = hs; i > 0; i -= 1) {
         // linear interpolation upsampler. Lowpass, 1st sidelobe @ about -26 dB
         n = hu;
-	l += (p[0]*((1<<16)-n) + p[2]*n) >> 16;
-	r += (p[1]*((1<<16)-n) + p[3]*n) >> 16;
+        l += (p[0]*((1<<16)-n) + p[2]*n) >> 16;
+        r += (p[1]*((1<<16)-n) + p[3]*n) >> 16;
         hu += hi;
-        p += (hu >> 16) * 2;
-        hu = (u16) hu;
-
-        n = hu;
-	l += (p[0]*((1<<16)-n) + p[2]*n) >> 16;
-	r += (p[1]*((1<<16)-n) + p[3]*n) >> 16;
-        hu += hi;
-        p += (hu >> 16) * 2;
-        hu = (u16) hu;
+        n = hu >> 16;
+        p += n * 2;
+        hu -= n << 16;
       }
       *q++ = l >> hm, *q++ = r >> hm;
     }
   } else {
     while (--length >= 0) {
       l = 0;
-      for (i = 0; i < hs; i += 2) {
+      for (i = hs; i > 0; i -= 1) {
         n = hu;
-	l += (p[0]*((1<<16)-n) + p[1]*n) >> 16;
+        l += (p[0]*((1<<16)-n) + p[1]*n) >> 16;
         hu += hi;
-        p += (hu >> 16);
-        hu = (u16) hu;
-
-        n = hu;
-	l += (p[0]*((1<<16)-n) + p[1]*n) >> 16;
-        hu += hi;
-        p += (hu >> 16);
-        hu = (u16) hu;
+        n = hu >> 16;
+        p += n;
+        hu -= n << 16;
       }
       *q++ = l >> hm;
     }
   }
-  memcpy(hh, p, spf*sizeof(s32));
+  memcpy(hh, p, 2*spf*sizeof(s32));
 #endif
 
   return ch;
