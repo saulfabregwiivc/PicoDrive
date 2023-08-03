@@ -77,7 +77,6 @@ extern void *p32x_bios_g, *p32x_bios_m, *p32x_bios_s;
 #define POPT_DIS_FM_SSGEG   (1<<23)
 #define POPT_EN_FM_DAC      (1<<24) //x00 0000
 #define POPT_EN_FM_FILTER   (1<<25)
-#define POPT_EN_DITHER      (1<<26)
 
 #define PAHW_MCD    (1<<0)
 #define PAHW_32X    (1<<1)
@@ -121,7 +120,7 @@ typedef struct PicoInterface
 	unsigned short overclockM68k;  // overclock the emulated 68k, in %
 
 	unsigned short filter;         // softscale filter type
-	int dither;                    // dither filtering strength
+	int undither;                  // undither filtering strength (0=off, 3=max)
 
 	int sndRate;                   // rate in Hz
 	int sndFilterAlpha;            // Low pass sound filter alpha (Q16)
@@ -238,7 +237,7 @@ void PicoDoHighPal555(int sh, int line, struct PicoEState *est);
 #define PDRAW_30_ROWS      (1<<11) // 30 rows mode (240 lines)
 #define PDRAW_32X_SCALE    (1<<12) // scale CLUT layer for 32X
 #define PDRAW_SMS_BLANK_1  (1<<13) // 1st column blanked
-#define PDRAW_DITHER       (1<<14) // dither filter
+#define PDRAW_UNDITHER     (1<<14) // undither filter
 #define PDRAW_SOFTSCALE    (1<<15) // H32 upscaling
 #define PDRAW_SYNC_NEEDED  (1<<16) // redraw needed
 #define PDRAW_SYNC_NEXT    (1<<17) // redraw next frame
