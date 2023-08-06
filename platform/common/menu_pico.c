@@ -460,6 +460,10 @@ static int menu_loop_keyconfig(int id, int keys)
 
 // ------------ MD options menu ------------
 
+static const char *men_undither[] = { "OFF", "weak", "medium", "strong", NULL };
+static const char h_undither[] = "Identify dithered areas and apply smoothing,\n"
+				"only available with 16bit accurate renderer";
+
 static const char h_fmsound[]  = "Disabling improves performance, but breaks sound";
 static const char h_dacnoise[] = "Megadrive 1 has DAC noise, Megadrive 2 doesn't";
 static const char h_fmfilter[] = "Improves sound accuracy but is noticeably slower,\n"
@@ -468,6 +472,7 @@ static const char h_fmfilter[] = "Improves sound accuracy but is noticeably slow
 static menu_entry e_menu_md_options[] =
 {
 	mee_enum      ("Renderer",        MA_OPT_RENDERER, currentConfig.renderer, renderer_names),
+	mee_enum_h    ("Dither removal",  MA_OPT2_UNDITHER, PicoIn.undither, men_undither, h_undither),
 	mee_onoff_h   ("FM audio",        MA_OPT2_ENABLE_YM2612, PicoIn.opt, POPT_EN_FM, h_fmsound),
 	mee_onoff_h   ("FM DAC noise",    MA_OPT2_ENABLE_YM_DAC, PicoIn.opt, POPT_EN_FM_DAC, h_dacnoise),
 	mee_onoff_h   ("FM filtering",    MA_OPT_FM_FILTER, PicoIn.opt, POPT_EN_FM_FILTER, h_fmfilter),
@@ -721,8 +726,6 @@ static int menu_loop_snd_options(int id, int keys)
 
 // ------------ gfx options menu ------------
 
-static const char *men_undither[] = { "OFF", "weak", "medium", "strong", NULL };
-static const char h_undither[] = "Identify dithered areas and apply smoothing";
 static const char h_gamma[] = "Gamma/brightness adjustment (default 1.00)";
 
 static const char *mgn_opt_fskip(int id, int *offs)
@@ -744,7 +747,6 @@ static menu_entry e_menu_gfx_options[] =
 	mee_enum      ("Video output mode", MA_OPT_VOUT_MODE, plat_target.vout_method, men_dummy),
 	mee_range_cust("Frameskip",         MA_OPT_FRAMESKIP, currentConfig.Frameskip, -1, 16, mgn_opt_fskip),
 	mee_range     ("Max auto frameskip",MA_OPT2_MAX_FRAMESKIP, currentConfig.max_skip, 1, 10),
-	mee_enum_h    ("Dither removal",    MA_OPT2_UNDITHER, PicoIn.undither, men_undither, h_undither),
 	mee_enum      ("Filter",            MA_OPT3_FILTERING, currentConfig.filter, men_dummy),
 	mee_range_cust_h("Gamma correction",MA_OPT2_GAMMA, currentConfig.gamma, 1, 300, mgn_aopt_gamma, h_gamma),
 	MENU_OPTIONS_GFX

@@ -20,6 +20,7 @@
 .equ PDRAW_SHHI_DONE,     (1<<7)
 .equ PDRAW_BORDER_32,     (1<<9)
 .equ PDRAW_32X_SCALE,     (1<<12)
+.equ PDRAW_UNDITHER,      (1<<14)
 .equ PDRAW_SOFTSCALE,     (1<<15)
 
 @ helpers
@@ -1630,6 +1631,10 @@ PicoDoHighPal555_end:
 .global FinalizeLine555
 
 FinalizeLine555:
+    ldr     r3, [r2, #OFS_EST_rendstatus]
+    tst     r3, #PDRAW_UNDITHER  @ ARM implementation for this is missing
+    bne     FinalizeLine555undither
+
     stmfd   sp!, {r4-r11,lr}
     mov     r11,r2               @ est
     ldr     r8, [r11, #OFS_EST_Pico]
