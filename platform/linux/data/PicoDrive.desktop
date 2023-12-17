@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=PicoDrive
+Exec=PicoDrive %f
+Icon=megadrive
+Type=Application
+Categories=Game;
+
