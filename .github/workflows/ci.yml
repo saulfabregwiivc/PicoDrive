@@ -2,25 +2,18 @@ name: Picodrive CI
 on: [push, pull_request]
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
       with:
         submodules: true
     - name: install dependencies
       run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y libsdl1.2-dev libasound2-dev libpng-dev libz-dev
-        sudo apt-get install -y libfuse2 fuse3
-        wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20231206-1/linuxdeploy-x86_64.AppImage
-        chmod 755 linuxdeploy-x86_64.AppImage
-    - name: build
-      run: |
-        ./configure
-        make -j2
-        mkdir -p app/usr/bin
-        cp -a PicoDrive platform/linux/skin app/usr/bin
-        ./linuxdeploy-x86_64.AppImage --appdir=app --desktop-file=platform/linux/data/PicoDrive.desktop --icon-file=platform/opendingux/data/megadrive.png --output=appimage
+        (echo "apt-get update -qq && DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y gcc g++ make git wget zip libfuse2 fuse libsdl1.2-dev libasound2-dev libpng-dev libz-dev &&"; \
+        echo "wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20231206-1/linuxdeploy-x86_64.AppImage && chmod 755 linuxdeploy-x86_64.AppImage &&"; \
+        echo "./configure && make -j2 && mkdir -p app/usr/bin && cp -a PicoDrive platform/linux/skin app/usr/bin &&"; \
+        echo "./linuxdeploy-x86_64.AppImage --appdir=app --desktop-file=platform/linux/data/PicoDrive.desktop --icon-file=platform/opendingux/data/megadrive.png --output=appimage") | \
+        docker run -i -v$PWD:/home/picodrive -w/home/picodrive --rm --privileged ubuntu:20.04
     - name: artifacts
       uses: actions/upload-artifact@v3
       with:
