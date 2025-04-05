@@ -457,6 +457,30 @@ static u32 read_pad_mouse(int i, u32 out_bits)
   return value;
 }
 
+static u32 read_pad_menacer(int i, u32 out_bits)
+{
+  u32 pad = PicoIn.padInt[i]; // Get pad MXYZ SACB RLDU; NB not(!) inverted
+  u32 value;
+
+  value = ((pad>>4) & 0x09) | ((pad>>3) & 0x4) | ((pad>>5) & 0x2); // .... SCAB
+
+  value |= 0x40; // TH line is light sensor. Pretend there's always darkness...
+  return value;
+}
+
+static u32 read_pad_justifier(int i, u32 out_bits)
+{
+  u32 pad = ~PicoIn.padInt[i]; // Get inverse of pad MXYZ SACB RLDU
+  u32 value = 0x30; // .111 0000, for ID
+
+  // output data: .tgd ...., t = TH, g = gun select, d = disable
+  if (!(PicoMem.ioports[i+1] & out_bits & 0x70)) // blue gun, enabled
+    value |= ((pad>>6) & 0x03); // .011 ..SA
+
+  value |= (out_bits & 0x40);
+  return value;
+}
+
 static u32 read_nothing(int i, u32 out_bits)
 {
   return 0xff;
@@ -469,6 +493,7 @@ int port_type[3] = {
   PICO_INPUT_PAD_3BTN,
   PICO_INPUT_NOTHING
 };
+int port_lightgun;
 
 static port_read_func *port_readers[3] = {
   read_pad_3btn,
@@ -518,6 +543,40 @@ static NOINLINE u32 port_read(int i)
   return (in & ~ctrl_reg) | (data_reg & ctrl_reg);
 }
 
+// update ports
+void PicoPortUpdate(void)
+{
+  if (port_lightgun || (Pico.m.hardware & PMS_HW_LG)) {
+    PicoIn.mouseInt[0] += PicoIn.mouse[0] - PicoIn.mouseInt[2];
+    PicoIn.mouseInt[1] += PicoIn.mouse[1] - PicoIn.mouseInt[3];
+    PicoIn.mouseInt[2] = PicoIn.mouse[0];
+    PicoIn.mouseInt[3] = PicoIn.mouse[1];
+    if (PicoIn.mouseInt[0] < 0) PicoIn.mouseInt[0] = 0;
+    if (PicoIn.mouseInt[0] > 320 ) PicoIn.mouseInt[0] = 320;
+    if (PicoIn.mouseInt[1] < 0) PicoIn.mouseInt[1] = 0;
+    if (PicoIn.mouseInt[1] > 240) PicoIn.mouseInt[1] = 240;
+  }
+}
+
+void PicoPortTrigger(void)
+{
+  // TODO mx/my scaling for V28/V30, H32/H40, soft/hardscaling?
+  int mx = PicoIn.mouseInt[0] + PicoIn.gunx;
+  int my = PicoIn.mouseInt[1] + PicoIn.guny;
+
+  if (unlikely(Pico.m.scanline == my) && port_lightgun &&
+      ((PicoMem.ioports[4]|PicoMem.ioports[5]) & 0x80)) {
+    // there's a rather massive delay from VDP, TV, light sensor, infrared
+    // transmission, to the TH pin; it lasts well into the next line.
+    if (port_type[1] == PICO_INPUT_JUSTIFIER) {
+      // justifier should trigger only if gun enabled?
+      if (!(PicoMem.ioports[2] & 0x30))
+        PicoVideoTriggerTH(mx + 66, my);
+    } else
+      PicoVideoTriggerTH(mx + 136, my);
+  }
+}
+
 // pad export for J-Cart
 u32 PicoReadPad(int i, u32 out_bits)
 {
@@ -527,6 +586,7 @@ u32 PicoReadPad(int i, u32 out_bits)
 void PicoSetInputDevice(int port, enum input_device device)
 {
   port_read_func *func;
+  int is_lg = device == PICO_INPUT_LIGHT_GUN || device == PICO_INPUT_JUSTIFIER;
 
   if (port < 0 || port > 2)
     return;
@@ -537,12 +597,16 @@ void PicoSetInputDevice(int port, enum input_device device)
   case PICO_INPUT_PAD_TEAM:   func = read_pad_team; break;
   case PICO_INPUT_PAD_4WAY:   func = read_pad_4way; break;
   case PICO_INPUT_MOUSE:      func = read_pad_mouse; break;
+  case PICO_INPUT_LIGHT_GUN:  func = read_pad_menacer; break;
+  case PICO_INPUT_JUSTIFIER:  func = read_pad_justifier; break;
   default:                    func = read_nothing; break;
   }
 
   if (port == 1 && port_type[0] == PICO_INPUT_PAD_TEAM)
     func = read_nothing;
 
+  port_lightgun &= ~(1<<port);
+  port_lightgun |= is_lg<<port;
   port_type[port] = device;
   port_readers[port] = func;
 }

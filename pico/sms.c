@@ -503,6 +503,20 @@ static unsigned char z80_sms_in(unsigned short a)
             d = (d & ~0x08) | ((Pico.ms.io_ctl >> 3) & 0x08);
           if (Pico.ms.io_ctl & 0x08) d |= 0x80; // TH as input is unconnected
           if (Pico.ms.io_ctl & 0x02) d |= 0x40;
+          if (Pico.m.hardware & PMS_HW_LG) { // light phaser
+            // TODO mx/my scaling is wrong if V28/V30 mode is used?
+            int mx = (PicoIn.mouseInt[0]+PicoIn.gunx) * 256*((1LL<<32)/320) >> 32;
+            int my = (PicoIn.mouseInt[1]+PicoIn.guny) * 192*((1LL<<32)/224) >> 32;
+            int x = vdp_hcounter(z80_cyclesDone() - Pico.t.z80c_line_start);
+            int dx = 2*x - mx;
+            int dy = Pico.m.scanline - my;
+            int th = 0xc0; // TODO set bits according to port usage
+            d |= th; // TH input, high if no light detected
+            if (dy > -4 && dy < 4 && dx > -40 && dx < 40) {
+              d &= ~th; // TH falling -> save hcounter
+              Pico.ms.vdp_hlatch = (mx >> 1) + 24;
+            }
+          }
         } else {
           int i; // read kbd 4 bits
           kbd_update();
@@ -1223,6 +1237,13 @@ void PicoStateLoadedMS(void)
   memcpy(Pico.ms.carthw, carthw, 16);
 }
 
+void PicoPrepareMS(void)
+{
+  Pico.m.hardware &= ~PMS_HW_LG;
+  if (port_type[0] == PICO_INPUT_LIGHT_GUN || port_type[1] == PICO_INPUT_LIGHT_GUN)
+    Pico.m.hardware |= PMS_HW_LG;
+}
+
 void PicoFrameMS(void)
 {
   struct PicoVideo *pv = &Pico.video;
@@ -1236,6 +1257,7 @@ void PicoFrameMS(void)
   int y;
 
   PsndStartFrame();
+  PicoPortUpdate();
 
   // for SMS the pause button generates an NMI, for GG ths is not the case
   nmi = (PicoIn.pad[0] >> 7) & 1;

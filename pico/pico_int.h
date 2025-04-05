@@ -302,6 +302,7 @@ extern SH2 sh2s[2];
 #define PVS_DMAFILL   (1 << 20) // DMA fill is waiting for fill data
 #define PVS_DMABG     (1 << 21) // background DMA operation is running
 #define PVS_FIFORUN   (1 << 22) // FIFO is processing
+#define PVS_HVLATCH   (1 << 23) // next hv read is latched (for lightguns)
 
 struct PicoVideo
 {
@@ -354,6 +355,7 @@ struct PicoMisc
 #define PMS_HW_FM	0x8   // FM sound
 #define PMS_HW_TMS	0x10  // assume TMS9918
 #define PMS_HW_3D	0x20  // 3D glasses
+#define PMS_HW_LG	0x40  // light phaser
 #define PMS_HW_FMUSED	0x80  // FM sound accessed
 
 #define PMS_MAP_AUTO	0
@@ -757,10 +759,16 @@ u32 PicoRead8_io(u32 a);
 u32 PicoRead16_io(u32 a);
 void PicoWrite8_io(u32 a, u32 d);
 void PicoWrite16_io(u32 a, u32 d);
+void PicoPortUpdate(void);
+void PicoPortTrigger(void);
 u32 PicoReadPad(int i, u32 mask);
 int io_ports_pack(void *buf, size_t size);
 void io_ports_unpack(const void *buf, size_t size);
 extern int port_type[3];
+extern int port_lightgun;
+
+#define PicoPortTick() \
+  if (Pico.m.scanline == PicoIn.mouseInt[1] && port_lightgun) PicoPortTrigger()
 
 // pico/memory.c
 PICO_INTERNAL void PicoMemSetupPico(void);
@@ -978,6 +986,7 @@ void PicoVideoFIFOMode(int active, int h40);
 int PicoVideoFIFOWrite(int count, int byte_p, unsigned sr_mask, unsigned sr_flags);
 void PicoVideoInit(void);
 void PicoVideoReset(void);
+void PicoVideoTriggerTH(int x, int y);
 void PicoVideoSync(int skip);
 int PicoVideoSave(void *buf);
 void PicoVideoLoad(void *buf, int len);
@@ -1024,6 +1033,7 @@ void PicoPowerMS(void);
 void PicoResetMS(void);
 void PicoMemSetupMS(void);
 void PicoStateLoadedMS(void);
+void PicoPrepareMS(void);
 void PicoFrameMS(void);
 void PicoFrameDrawOnlyMS(void);
 int PicoPlayTape(const char *fname);

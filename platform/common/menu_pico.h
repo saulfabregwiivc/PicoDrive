@@ -110,12 +110,18 @@ typedef enum
 	MA_CTRL_PLAYER4,
 	MA_CTRL_EMU,
 	MA_CTRL_KEYBOARD,
+	MA_CTRL_LIGHTGUN,
+	MA_CTRL_GUN_CURSOR,
+	MA_CTRL_GUN_XOFFS,
+	MA_CTRL_GUN_YOFFS,
 	MA_CTRL_TURBO_RATE,
 	MA_CTRL_DEADZONE,
 	MA_CTRL_DEV_FIRST,
 	MA_CTRL_DEV_NEXT,
 	MA_CTRL_DONE,
 } menu_id;
+
+extern const char *indev_names[];
 
 void menu_init(void);
 void menu_loop(void);

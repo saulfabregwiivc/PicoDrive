@@ -140,6 +140,7 @@ static int PicoFrameHints(void)
 
   Pico.t.m68c_frame_start = Pico.t.m68c_aim;
   PsndStartFrame();
+  PicoPortUpdate();
 
   hint = pv->hint_cnt;
 
@@ -153,6 +154,8 @@ static int PicoFrameHints(void)
 
     Pico.m.scanline = y;
     pv->v_counter = PicoVideoGetV(y, 0);
+
+    PicoPortTick();
 
     // H-Interrupts:
     if (--hint < 0)
@@ -209,6 +212,8 @@ static int PicoFrameHints(void)
   pv->v_counter = PicoVideoGetV(y, 0);
 
   memcpy(PicoIn.padInt, PicoIn.pad, sizeof(PicoIn.padInt));
+  PicoPortTick();
+
   // Last H-Int (normally):
   if (--hint < 0)
   {
@@ -278,6 +283,8 @@ static int PicoFrameHints(void)
     Pico.m.scanline = y;
     pv->v_counter = PicoVideoGetV(y, 1);
 
+    PicoPortTick();
+
     if (unlikely(pv->status & PVS_ACTIVE) && --hint < 0)
     {
       hint = pv->reg[10]; // Reload H-Int counter
@@ -311,6 +318,8 @@ static int PicoFrameHints(void)
   // last scanline
   Pico.m.scanline = y++;
   pv->v_counter = 0xff;
+
+  PicoPortTick();
 
   if (unlikely(pv->status & PVS_ACTIVE)) {
     if (--hint < 0) {
