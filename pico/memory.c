@@ -27,9 +27,9 @@ static void xmap_set(uptr *map, int shift, u32 start_addr, u32 end_addr,
     const void *func_or_mh, int is_func)
 {
 #ifdef __clang__
-  // workaround bug (segfault) in 
+  // workaround bug (segfault) in
   // Apple LLVM version 4.2 (clang-425.0.27) (based on LLVM 3.2svn)
-  volatile 
+  volatile
 #endif
   uptr addr = (uptr)func_or_mh;
   int mask = (1 << shift) - 1;
@@ -236,9 +236,9 @@ static void m68k_unmapped_write16(u32 a, u32 d)
 void m68k_map_unmap(u32 start_addr, u32 end_addr)
 {
 #ifdef __clang__
-  // workaround bug (segfault) in 
+  // workaround bug (segfault) in
   // Apple LLVM version 4.2 (clang-425.0.27) (based on LLVM 3.2svn)
-  volatile 
+  volatile
 #endif
   uptr addr;
   int shift = M68K_MEM_SHIFT;
@@ -464,6 +464,12 @@ static u32 read_nothing(int i, u32 out_bits)
 
 typedef u32 (port_read_func)(int index, u32 out_bits);
 
+int port_type[3] = {
+  PICO_INPUT_PAD_3BTN,
+  PICO_INPUT_PAD_3BTN,
+  PICO_INPUT_NOTHING
+};
+
 static port_read_func *port_readers[3] = {
   read_pad_3btn,
   read_pad_3btn,
@@ -472,23 +478,31 @@ static port_read_func *port_readers[3] = {
 
 static int padTHLatency[3];
 static int padTLLatency[3];
+static int padTHTimeout[3];
 
 static NOINLINE u32 port_read(int i)
 {
   u32 data_reg = PicoMem.ioports[i + 1];
   u32 ctrl_reg = PicoMem.ioports[i + 4] | 0x80;
+  u32 cycles = SekCyclesDone();
   u32 in, out;
 
   out = data_reg & ctrl_reg;
+
+  // controllers have a timeout on TH, they reset if not toggled for some time
+  if (CYCLES_GE(cycles, padTHTimeout[i])) {
+    padTHTimeout[i] = cycles;
+    Pico.m.padTHPhase[i] = 0;
+  }
 
   // pull-ups: should be 0x7f, but Decap Attack has a bug where it temp.
   // disables output before doing TH-low read, so emulate RC filter for TH.
   // Decap Attack reportedly doesn't work on Nomad but works on most
   // other MD revisions (different pull-up strength?).
   u32 mask = 0x3f;
-  if (CYCLES_GE(SekCyclesDone(), padTHLatency[i])) {
+  if (CYCLES_GE(cycles, padTHLatency[i])) {
     mask |= 0x40;
-    padTHLatency[i] = SekCyclesDone();
+    padTHLatency[i] = cycles;
   }
   out |= mask & ~ctrl_reg;
 
@@ -496,8 +510,8 @@ static NOINLINE u32 port_read(int i)
 
   // Sega mouse uses the TL/TR lines for req/ack. For buggy drivers, make sure
   // there's some delay before ack is sent by taking over the new TL line level
-  if (CYCLES_GE(SekCyclesDone(), padTLLatency[i]))
-    padTLLatency[i] = SekCyclesDone();
+  if (CYCLES_GE(cycles, padTLLatency[i]))
+    padTLLatency[i] = cycles;
   else
     in ^= 0x10; // TL
 
@@ -517,35 +531,19 @@ void PicoSetInputDevice(int port, enum input_device device)
   if (port < 0 || port > 2)
     return;
 
-  if (port == 1 && port_readers[0] == read_pad_team)
-    func = read_nothing;
-
-  else switch (device) {
-  case PICO_INPUT_PAD_3BTN:
-    func = read_pad_3btn;
-    break;
-
-  case PICO_INPUT_PAD_6BTN:
-    func = read_pad_6btn;
-    break;
-
-  case PICO_INPUT_PAD_TEAM:
-    func = read_pad_team;
-    break;
-
-  case PICO_INPUT_PAD_4WAY:
-    func = read_pad_4way;
-    break;
-
-  case PICO_INPUT_MOUSE:
-    func = read_pad_mouse;
-    break;
-
-  default:
-    func = read_nothing;
-    break;
+  switch (device) {
+  case PICO_INPUT_PAD_3BTN:   func = read_pad_3btn; break;
+  case PICO_INPUT_PAD_6BTN:   func = read_pad_6btn; break;
+  case PICO_INPUT_PAD_TEAM:   func = read_pad_team; break;
+  case PICO_INPUT_PAD_4WAY:   func = read_pad_4way; break;
+  case PICO_INPUT_MOUSE:      func = read_pad_mouse; break;
+  default:                    func = read_nothing; break;
   }
 
+  if (port == 1 && port_type[0] == PICO_INPUT_PAD_TEAM)
+    func = read_nothing;
+
+  port_type[port] = device;
   port_readers[port] = func;
 }
 
@@ -570,18 +568,20 @@ NOINLINE void io_ports_write(u32 a, u32 d)
   // for some controllers, changing TH/TR changes controller state
   if (1 <= a && a <= 2)
   {
-    Pico.m.padDelay[a - 1] = 0;
-    if (port_readers[a - 1] == read_pad_team) {
+    // there's a timeout for toggling the TH line
+    padTHTimeout[a - 1] = SekCyclesDone() + 25*488;
+
+    if (port_type[a - 1] == PICO_INPUT_PAD_TEAM) {
       if (d & 0x40)
         Pico.m.padTHPhase[a - 1] = 0;
       else if ((d^PicoMem.ioports[a]) & 0x60)
         Pico.m.padTHPhase[a - 1]++;
-    } else if (port_readers[0] == read_pad_4way) {
+    } else if (port_type[0] == PICO_INPUT_PAD_4WAY) {
       if (a == 2 && ((PicoMem.ioports[a] ^ d) & 0x70))
         Pico.m.padTHPhase[0] = 0;
       if (a == 1 && !(PicoMem.ioports[a] & 0x40) && (d & 0x40))
         Pico.m.padTHPhase[0]++;
-    } else if (port_readers[a - 1] == read_pad_mouse) {
+    } else if (port_type[a - 1] == PICO_INPUT_MOUSE) {
       if ((d^PicoMem.ioports[a]) & 0x20) {
         if (Pico.m.padTHPhase[a - 1]) { // in readout?
           padTLLatency[a - 1] = SekCyclesDone() + 100;
@@ -597,7 +597,7 @@ NOINLINE void io_ports_write(u32 a, u32 d)
       Pico.m.padTHPhase[a - 1]++;
   }
 
-  // after switching TH to input there's a latency before the pullup value is 
+  // after switching TH to input there's a latency before the pullup value is
   // read back as input (see Decap Attack, not in Samurai Showdown, 32x WWF Raw)
   if (4 <= a && a <= 5) {
     if ((PicoMem.ioports[a] & 0x40) && !(d & 0x40) && !(PicoMem.ioports[a - 3] & 0x40))
@@ -625,6 +625,8 @@ int io_ports_pack(void *buf, size_t size)
     save_u16(buf, &b, PicoIn.padInt[i]);
   for (i = 0; i < 4; i++)
     save_s32(buf, &b, PicoIn.mouseInt[i]);
+  for (i = 0; i < ARRAY_SIZE(padTHTimeout); i++)
+    save_u32(buf, &b, padTHTimeout[i]);
   assert(b <= size);
   return b;
 }
@@ -645,6 +647,15 @@ void io_ports_unpack(const void *buf, size_t size)
     PicoIn.padInt[i] = load_u16(buf, &b);
   for (i = 0; i < 4; i++)
     PicoIn.mouseInt[i] = load_s32(buf, &b);
+
+  // convert pad delay from line count to samples
+  for (i = 0; i < ARRAY_SIZE(padTHTimeout); i++) {
+    if (b < size)
+      padTHTimeout[i] = load_u32(buf, &b);
+    else
+      padTHTimeout[i] = SekCyclesDone() - (25-Pico.m.padDelay[i]) * 488;
+  }
+
   assert(b <= size);
 }
 
@@ -675,7 +686,7 @@ void NOINLINE ctl_write_z80busreq(u32 d)
         pprof_start(m68k);
         PicoSyncZ80(SekCyclesDone());
         pprof_end_sub(m68k);
-        granted = Pico.t.z80c_aim + 6; // M cycle is 3-6 cycles 
+        granted = Pico.t.z80c_aim + 6; // M cycle is 3-6 cycles
         Pico.t.z80_busdelay += (Pico.t.z80c_cnt - granted) << 8;
         Pico.t.z80c_cnt = granted;
       }
@@ -746,7 +757,7 @@ static u32 PicoRead8_sram(u32 a)
   // XXX: this is banking unfriendly
   if (a < Pico.romsize)
     return Pico.rom[MEM_BE2(a)];
-  
+ 
   return m68k_unmapped_read8(a);
 }
 
@@ -835,7 +846,7 @@ static u32 PicoRead8_z80(u32 a)
   if ((a & 0x4000) == 0x0000) {
     d = PicoMem.zram[a & 0x1fff];
   } else if ((a & 0x6000) == 0x4000) // 0x4000-0x5fff
-    d = ym2612_read_local_68k(); 
+    d = ym2612_read_local_68k();
   else {
     elprintf(EL_UIO|EL_ANOMALY, "68k bad read [%06x] @%06x", a, SekPc);
     d = (u8)PicoRead16_floating(a);

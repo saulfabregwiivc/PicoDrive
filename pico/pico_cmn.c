@@ -10,12 +10,6 @@
 #define CYCLES_M68K_LINE     488 // suitable for both PAL/NTSC
 #define CYCLES_M68K_VINT_LAG 112
 
-// pad delay (for 6 button pads)
-#define PAD_DELAY() { \
-  if(Pico.m.padDelay[0]++ > 25) Pico.m.padTHPhase[0]=0; \
-  if(Pico.m.padDelay[1]++ > 25) Pico.m.padTHPhase[1]=0; \
-}
-
 // CPUS_RUN
 #ifndef CPUS_RUN
 #define CPUS_RUN(m68k_cycles) \
@@ -160,8 +154,6 @@ static int PicoFrameHints(void)
     Pico.m.scanline = y;
     pv->v_counter = PicoVideoGetV(y, 0);
 
-    PAD_DELAY();
-
     // H-Interrupts:
     if (--hint < 0)
     {
@@ -217,8 +209,6 @@ static int PicoFrameHints(void)
   pv->v_counter = PicoVideoGetV(y, 0);
 
   memcpy(PicoIn.padInt, PicoIn.pad, sizeof(PicoIn.padInt));
-  PAD_DELAY();
-
   // Last H-Int (normally):
   if (--hint < 0)
   {
@@ -288,8 +278,6 @@ static int PicoFrameHints(void)
     Pico.m.scanline = y;
     pv->v_counter = PicoVideoGetV(y, 1);
 
-    PAD_DELAY();
-
     if (unlikely(pv->status & PVS_ACTIVE) && --hint < 0)
     {
       hint = pv->reg[10]; // Reload H-Int counter
@@ -323,8 +311,6 @@ static int PicoFrameHints(void)
   // last scanline
   Pico.m.scanline = y++;
   pv->v_counter = 0xff;
-
-  PAD_DELAY();
 
   if (unlikely(pv->status & PVS_ACTIVE)) {
     if (--hint < 0) {
@@ -361,7 +347,6 @@ static int PicoFrameHints(void)
   return 0;
 }
 
-#undef PAD_DELAY
 #undef CPUS_RUN
 
 // vim:shiftwidth=2:ts=2:expandtab
