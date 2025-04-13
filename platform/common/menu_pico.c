@@ -547,7 +547,6 @@ int key_config_kbd_loop(int id, int keys)
 const char *indev_names[] = { "none", "3 button pad", "6 button pad", "Mouse", "Light gun", "Justifier", "Team player", "4 way play", NULL };
 
 static char h_play12[55];
-static char h_kbd[55];
 static char h_play34[] = "Works only for Mega Drive/CD/32X games having\n"
 				"support for Team player, 4 way play, or J-cart";
 static char h_gun[]    = "Light phaser for SMS, Menacer for Mega Drive";
@@ -588,7 +587,6 @@ static const char *mgn_keyboard(int id, int *offs)
 
 static int key_config_keyboard(int id, int keys)
 {
-	int x = me_id2offset(e_menu_keyconfig, MA_CTRL_KEYBOARD);
 	int kid = currentConfig.keyboard;
 #ifdef USE_SDL	// TODO this info should come from platform!
 	int k = 2;
@@ -603,11 +601,7 @@ static int key_config_keyboard(int id, int keys)
 
 	currentConfig.keyboard = kid;
 
-	e_menu_keyconfig[x].help = (currentConfig.keyboard == 2 ? h_kbd : NULL);
-
-	if (keys & PBTN_MOK)
-		if (currentConfig.keyboard == 2)
-			key_config_kbd_loop(MA_CTRL_KEYBOARD, 0);
+	me_enable(e_menu_keyconfig, MA_CTRL_KEYBOARD, currentConfig.keyboard == 2);
 
 	return 0;
 }
@@ -679,7 +673,8 @@ static menu_entry e_menu_keyconfig[] =
 {
 	mee_cust_nosave(player,             MA_CTRL_PLAYER1,    key_config_players, mgn_nothing),
 	mee_handler_id("Emulator hotkeys",  MA_CTRL_EMU,        key_config_loop_wrap),
-	mee_cust_h    ("Keyboard",          MA_CTRL_KEYBOARD,   key_config_keyboard, mgn_keyboard, h_kbd),
+	mee_cust_h    ("Keyboard",          MA_OPT_KEYBOARD,    key_config_keyboard, mgn_keyboard, NULL),
+	mee_handler_id("Keys configuration",MA_CTRL_KEYBOARD,   key_config_kbd_loop),
 	mee_cust_h    ("Input device 1",    MA_OPT_INPUT_DEV0,  mh_indev, mgn_indev, NULL),
 	mee_cust_h    ("Input device 2",    MA_OPT_INPUT_DEV1,  mh_indev, mgn_indev, NULL),
 	mee_range     ("Turbo rate",        MA_CTRL_TURBO_RATE, currentConfig.turbo_rate, 1, 30),
@@ -711,13 +706,12 @@ static int menu_loop_keyconfig(int id, int keys)
 	snprintf(l,sizeof(l),"%s", in_get_key_name(-1, -PBTN_LEFT));
 	snprintf(r,sizeof(r),"%s", in_get_key_name(-1, -PBTN_RIGHT));
 	snprintf(h_play12, sizeof(h_play12), "%s/%s - select, %s - configure", l, r, in_get_key_name(-1, -PBTN_MOK));
-	snprintf(h_kbd, sizeof(h_kbd), "%s - configure", in_get_key_name(-1, -PBTN_MOK));
 
 	player[strlen(player)-1] = '1';
 	x = me_id2offset(e_menu_keyconfig, MA_CTRL_PLAYER1);
 	e_menu_keyconfig[x].help = h_play12;
-	x = me_id2offset(e_menu_keyconfig, MA_CTRL_KEYBOARD);
-	e_menu_keyconfig[x].help = (currentConfig.keyboard == 2 ? h_kbd : NULL);
+
+	me_enable(e_menu_keyconfig, MA_CTRL_KEYBOARD, currentConfig.keyboard == 2);
 
 	x = currentConfig.input_dev0 == PICO_INPUT_LIGHT_GUN ||
 		currentConfig.input_dev1 == PICO_INPUT_LIGHT_GUN ||
