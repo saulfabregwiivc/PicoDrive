@@ -767,8 +767,8 @@ void io_ports_unpack(const void *buf, size_t size);
 extern int port_type[3];
 extern int port_lightgun;
 
-#define PicoPortTick() \
-  if (Pico.m.scanline == PicoIn.mouseInt[1] && port_lightgun) PicoPortTrigger()
+#define PicoPortTick() if (port_lightgun && \
+            Pico.m.scanline == PicoIn.mouseInt[1]+PicoIn.guny) PicoPortTrigger()
 
 // pico/memory.c
 PICO_INTERNAL void PicoMemSetupPico(void);

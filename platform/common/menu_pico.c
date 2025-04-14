@@ -549,7 +549,8 @@ const char *indev_names[] = { "none", "3 button pad", "6 button pad", "Mouse", "
 static char h_play12[55];
 static char h_play34[] = "Works only for Mega Drive/CD/32X games having\n"
 				"support for Team player, 4 way play, or J-cart";
-static char h_gun[]    = "Light phaser for SMS, Menacer for Mega Drive";
+static char h_gun[]    = "Light Phaser for SMS, Menacer for Mega Drive\n"
+				"note: Justifier can only be connected to input 2";
 
 static char player[] = "Player 1";
 
@@ -608,7 +609,7 @@ static int key_config_keyboard(int id, int keys)
 
 static const char *mgn_indev(int id, int *offs)
 {
-	*offs -= 4;
+	*offs = -4;
 	if (id == MA_OPT_INPUT_DEV0)
 		return indev_names[currentConfig.input_dev0];
 	else	return indev_names[currentConfig.input_dev1];
