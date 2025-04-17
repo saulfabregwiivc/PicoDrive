@@ -603,7 +603,7 @@ static void DmaSlow(int len, u32 source)
           !((source ^ (source + len-1)) & ~mask))
       {
         // most used DMA mode
-        memcpy((char *)r + a, base + (source & mask), len * 2);
+        memcpy((char *)r + (u16)a, base + (source & mask), len * 2);
         a += len * 2;
         break;
       }
