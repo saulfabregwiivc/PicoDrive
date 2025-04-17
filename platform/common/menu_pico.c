@@ -550,7 +550,7 @@ static char h_play12[55];
 static char h_play34[] = "Works only for Mega Drive/CD/32X games having\n"
 				"support for Team player, 4 way play, or J-cart";
 static char h_gun[]    = "Light Phaser for SMS, Menacer for Mega Drive\n"
-				"note: Justifier can only be connected to input 2";
+				"note: Justifier can only be selected on input 2";
 
 static char player[] = "Player 1";
 
@@ -580,10 +580,12 @@ static int key_config_players(int id, int keys)
 
 static const char *mgn_keyboard(int id, int *offs)
 {
-	static char *kbds[] = { "OFF", "virtual", "physical" };
+	static const char *kbds[] = { "OFF", "virtual", "physical" };
+	const char *kbd = kbds[currentConfig.keyboard];
 	if (currentConfig.keyboard < 0 || currentConfig.keyboard > 2)
-		return kbds[0];
-	return kbds[currentConfig.keyboard];
+		kbd = kbds[0];
+	*offs = 3-strlen(kbd);
+	return kbd;
 }
 
 static int key_config_keyboard(int id, int keys)
@@ -609,10 +611,12 @@ static int key_config_keyboard(int id, int keys)
 
 static const char *mgn_indev(int id, int *offs)
 {
-	*offs = -4;
+	const char *dev;
 	if (id == MA_OPT_INPUT_DEV0)
-		return indev_names[currentConfig.input_dev0];
-	else	return indev_names[currentConfig.input_dev1];
+		dev = indev_names[currentConfig.input_dev0];
+	else	dev = indev_names[currentConfig.input_dev1];
+	*offs = 3-strlen(dev);
+	return dev;
 }
 
 static int mh_indev(int id, int keys)
