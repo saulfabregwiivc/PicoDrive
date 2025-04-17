@@ -1245,7 +1245,6 @@ static NOINLINE void ParseSprites(int max_lines, int limit)
       {
         unsigned char *p = &HighLnSpr[y][0];
         int cnt = p[0] & 0x7f;
-        if (p[1] & SPRL_MASKED) continue;               // masked?
 
         if (p[3] >= max_line_sprites) continue;         // sprite limit?
         p[3] ++;
@@ -1257,6 +1256,8 @@ static NOINLINE void ParseSprites(int max_lines, int limit)
           w = max_line_sprites*2 - p[2];
         }
         p[2] += w;
+
+        if (p[1] & SPRL_MASKED) continue;               // masked?
 
         if (sx == -0x78) {
           if (p[1] & (SPRL_HAVE_X|SPRL_TILE_OVFL))
