@@ -627,19 +627,32 @@ static int mh_indev(int id, int keys)
 
 	if (keys & PBTN_RIGHT) {
 		(*indev) ++;
+#ifdef USE_SDL	// TODO this info should come from platform!
 		// Justifier only in pad port 2
 		if (is0 && *indev == PICO_INPUT_JUSTIFIER)
 			(*indev) ++;
 		// Team/4way only in pad port 1
 		if (!is0 && *indev > PICO_INPUT_JUSTIFIER)
 			(*indev) --;
+#else
+		while (*indev >= PICO_INPUT_MOUSE && *indev <= PICO_INPUT_JUSTIFIER)
+			(*indev) ++;
+		// Team/4way only in pad port 1
+		while (!is0 && *indev >= PICO_INPUT_MOUSE)
+			(*indev) --;
+#endif
 		if (*indev >= PICO_INPUT_COUNT)
 			(*indev) --;
 	}
 	if (keys & PBTN_LEFT) {
 		(*indev) --;
+#ifdef USE_SDL	// TODO this info should come from platform!
 		if (is0 && *indev == PICO_INPUT_JUSTIFIER)
 			(*indev) --;
+#else
+		while (*indev >= PICO_INPUT_MOUSE && *indev <= PICO_INPUT_JUSTIFIER)
+			(*indev) --;
+#endif
 		if (*indev < 0)
 			(*indev) ++;
 	}
