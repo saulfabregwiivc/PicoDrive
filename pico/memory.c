@@ -516,7 +516,7 @@ static NOINLINE u32 port_read(int i)
 
   // controllers have a timeout on TH, they reset if not toggled for some time
   if (CYCLES_GE(cycles, padTHTimeout[i])) {
-    padTHTimeout[i] = cycles;
+    padTHTimeout[i] = cycles + 0x70000000;
     Pico.m.padTHPhase[i] = 0;
   }
 
@@ -609,6 +609,8 @@ void PicoSetInputDevice(int port, enum input_device device)
   port_lightgun |= is_lg<<port;
   port_type[port] = device;
   port_readers[port] = func;
+
+  padTLLatency[port] = padTHLatency[port] = padTHTimeout[port] = SekCyclesDone();
 }
 
 NOINLINE u32 io_ports_read(u32 a)
