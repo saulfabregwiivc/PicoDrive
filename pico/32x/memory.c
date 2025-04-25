@@ -184,7 +184,7 @@ static NOINLINE void sh2s_sync_on_read(SH2 *sh2, unsigned cycles)
 // This is used to correctly deliver syncronisation data to the 3 cpus. The
 // fifo stores 16 bit values, 8/32 bit accesses must be adapted accordingly.
 #define PFIFO_SZ	4
-#define PFIFO_CNT	8
+#define PFIFO_CNT	16
 struct sh2_poll_fifo {
   u32 cycles;
   u32 a;
@@ -198,7 +198,7 @@ static NOINLINE u32 sh2_poll_read(u32 a, u32 d, unsigned int cycles, SH2* sh2)
   int hix = (a >> 1) % PFIFO_CNT;
   struct sh2_poll_fifo *fifo = sh2_poll_fifo[hix];
   struct sh2_poll_fifo *p;
-  int cpu = sh2 ? sh2->is_slave : -1;
+  int cpu = 1 << (sh2 ? sh2->is_slave : 2), age = sh2 ? 60 : 360;
   unsigned idx;
 
   a &= ~0x20000000; // ignore writethrough bit
@@ -208,14 +208,14 @@ static NOINLINE u32 sh2_poll_read(u32 a, u32 d, unsigned int cycles, SH2* sh2)
     p = &fifo[idx];
     idx = (idx+1) % PFIFO_SZ;
 
-    if (cpu != p->cpu) {
-      if (CYCLES_GT(cycles, p->cycles+60)) { // ~180 sh2 cycles, Spiderman
+    if (p->cpu & cpu) {
+      if (CYCLES_GT(cycles, p->cycles+age)) { // ~180 sh2 cycles, Spiderman
         // drop older fifo stores that may cause synchronisation problems.
-        p->a = -1;
+        p->cpu &= ~cpu;
       } else if (p->a == a) {
         // replace current data with fifo value and discard fifo entry
         d = p->d;
-        p->a = -1;
+        p->cpu &= ~cpu;
         break;
       }
     }
@@ -228,7 +228,7 @@ static NOINLINE void sh2_poll_write(u32 a, u32 d, unsigned int cycles, SH2 *sh2)
   int hix = (a >> 1) % PFIFO_CNT;
   struct sh2_poll_fifo *fifo = sh2_poll_fifo[hix];
   struct sh2_poll_fifo *q;
-  int cpu = sh2 ? sh2->is_slave : -1;
+  int cpu = 1 << (sh2 ? sh2->is_slave : 2);
   unsigned rd = sh2_poll_rd[hix], wr = sh2_poll_wr[hix];
   unsigned idx, nrd;
 
@@ -238,8 +238,8 @@ static NOINLINE void sh2_poll_write(u32 a, u32 d, unsigned int cycles, SH2 *sh2)
   for (idx = nrd = wr; idx != rd; ) {
     idx = (idx-1) % PFIFO_SZ;
     q = &fifo[idx];
-    if (q->a == a && q->cpu != cpu)	{ q->a = -1; }
-    if (q->a != -1)			{ nrd = idx; }
+    if (q->a == a && (q->cpu & cpu))	{ q->cpu = 0; }
+    if (q->cpu)				{ nrd = idx; }
   }
   rd = nrd;
 
@@ -248,12 +248,12 @@ static NOINLINE void sh2_poll_write(u32 a, u32 d, unsigned int cycles, SH2 *sh2)
   // NB this can take an eternity on m68k: mov.b <addr1.l>,<addr2.l> needs
   // 28 m68k-cycles (~80 sh2-cycles) to complete (observed in Metal Head)
   q = &fifo[(sh2_poll_wr[hix]-1) % PFIFO_SZ];
-  if (rd != wr && q->a == a && !CYCLES_GT(cycles,q->cycles + (cpu<0 ? 30:4))) {
+  if (rd != wr && q->a == a && !CYCLES_GT(cycles,q->cycles + (!sh2 ? 30:4))) {
     q->d = d;
   } else {
     // store write to poll address in fifo
-    fifo[wr] =
-        (struct sh2_poll_fifo){ .cycles = cycles, .a = a, .d = d, .cpu = cpu };
+    fifo[wr] = (struct sh2_poll_fifo)
+        { .cycles = cycles, .a = a, .d = d, .cpu = ~cpu & 7 };
     wr = (wr+1) % PFIFO_SZ;
     if (wr == rd)
       // fifo overflow, discard oldest value
@@ -419,8 +419,10 @@ static void p32x_reg_write8(u32 a, u32 d)
       if ((d ^ r[0]) & ~d & P32XS_ADEN) {
         d |= P32XS_nRES;
         Pico32xShutdown();
-      } else if ((d ^ r[0]) & d & P32XS_nRES)
+      } else if ((d ^ r[0]) & d & P32XS_nRES) {
+        p32x_sync_sh2s(SekCyclesDone());
         p32x_reset_sh2s();
+      }
       REG8IN16(r, 0x01) &= ~(P32XS_nRES|P32XS_ADEN);
       REG8IN16(r, 0x01) |= d & (P32XS_nRES|P32XS_ADEN);
       return;
@@ -587,8 +589,10 @@ static void p32x_reg_write16(u32 a, u32 d)
       if ((d ^ r[0]) & ~d & P32XS_ADEN) {
         d |= P32XS_nRES;
         Pico32xShutdown();
-      } else if ((d ^ r[0]) & d & P32XS_nRES)
+      } else if ((d ^ r[0]) & d & P32XS_nRES) {
+        p32x_sync_sh2s(SekCyclesDone());
         p32x_reset_sh2s();
+      }
       r[0] &= ~(P32XS_FM|P32XS_nRES|P32XS_ADEN);
       r[0] |= d & (P32XS_FM|P32XS_nRES|P32XS_ADEN);
       return;
@@ -758,7 +762,7 @@ static u32 p32x_sh2reg_read16(u32 a, SH2 *sh2)
       cycles = sh2_cycles_done_m68k(sh2);
       sh2s_sync_on_read(sh2, cycles);
       return sh2_poll_read(a, Pico32x.sh2_regs[4 / 2], cycles, sh2);
-    case 0x06/2:
+    case 0x06/2: // DREQ ctrl
       return (r[a / 2] & ~P32XS_FULL) | 0x4000;
     case 0x08/2: // DREQ src
     case 0x0a/2:
@@ -944,6 +948,7 @@ static void p32x_sh2reg_write16(u32 a, u32 d, SH2 *sh2)
       goto irls;
     case 0x1a/2:
       Pico32x.regs[2 / 2] &= ~(1 << sh2->is_slave);
+      p32x_sync_other_sh2(sh2, sh2_cycles_done_m68k(sh2));
       p32x_update_cmd_irq(sh2, 0);
       return;
     case 0x1c/2:

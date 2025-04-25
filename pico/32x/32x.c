@@ -166,6 +166,7 @@ void p32x_reset_sh2s(void)
   sh2_reset(&ssh2);
   sh2_peripheral_reset(&msh2);
   sh2_peripheral_reset(&ssh2);
+  msh2.state = ssh2.state = 0;
 
   // if we don't have BIOS set, perform it's work here.
   // MSH2
@@ -241,6 +242,7 @@ void PicoReset32x(void)
 {
   if (PicoIn.AHW & PAHW_32X) {
     p32x_trigger_irq(NULL, SekCyclesDone(), P32XI_VRES);
+    p32x_m68k_poll_event(0, -1);
     p32x_sh2_poll_event(msh2.poll_addr, &msh2, SH2_IDLE_STATES, SekCyclesDone());
     p32x_sh2_poll_event(ssh2.poll_addr, &ssh2, SH2_IDLE_STATES, SekCyclesDone());
     p32x_pwm_ctl_changed();
@@ -349,6 +351,7 @@ void p32x_schedule_hint(SH2 *sh2, unsigned int m68k_cycles)
 {
   // rather rough, 32x hint is useless in practice
   int after;
+
   if (!((Pico32x.sh2irq_mask[0] | Pico32x.sh2irq_mask[1]) & 4))
     return; // nobody cares
   if (!(Pico32x.sh2_regs[0] & 0x80) && (Pico.video.status & PVS_VB2))
