@@ -515,7 +515,7 @@ static NOINLINE u32 port_read(int i)
   out = data_reg & ctrl_reg;
 
   // controllers have a timeout on TH, they reset if not toggled for some time
-  if (CYCLES_GE(cycles, padTHTimeout[i])) {
+  if (CYCLES_GE(cycles, padTHTimeout[i]) && i < 2) {
     padTHTimeout[i] = cycles + 0x70000000;
     Pico.m.padTHPhase[i] = 0;
   }
@@ -635,6 +635,8 @@ NOINLINE void io_ports_write(u32 a, u32 d)
   if (1 <= a && a <= 2)
   {
     // there's a timeout for toggling the TH line
+    if (CYCLES_GE(SekCyclesDone(), padTHTimeout[a - 1]))
+      Pico.m.padTHPhase[a - 1] = 0;
     padTHTimeout[a - 1] = SekCyclesDone() + 25*488;
 
     if (port_type[a - 1] == PICO_INPUT_PAD_TEAM) {
