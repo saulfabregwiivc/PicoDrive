@@ -474,15 +474,14 @@ static void plat_sdl_resize(int w, int h)
 {
 	// take over new settings
 #if defined(__OPENDINGUX__)
-	if (currentConfig.vscaling != EOPT_SCALE_HW &&
-	    plat_sdl_screen->w == 320 && plat_sdl_screen->h == 480) {
+	if (currentConfig.vscaling != EOPT_SCALE_HW && w == 320 && h == 480) {
 		g_menuscreen_h = 240;
 		g_menuscreen_w = 320;
 	} else
 #endif
 	{
-		g_menuscreen_h = plat_sdl_screen->h;
-		g_menuscreen_w = plat_sdl_screen->w;
+		g_menuscreen_h = h & ~3;
+		g_menuscreen_w = w & ~3;
 #if 0 // auto resizing may be nice, but creates problems on some SDL platforms
 		if (!plat_sdl_overlay && !plat_sdl_gl_active &&
 		    plat_sdl_is_windowed() && !plat_sdl_is_fullscreen()) {
@@ -508,6 +507,17 @@ static void plat_sdl_quit(void)
 {
 	// for now..
 	exit(1);
+}
+
+static void plat_sdl_handler(void *event_)
+{
+  SDL_Event *event = event_;
+
+  if (event->type == SDL_VIDEORESIZE)
+    // handle resize here to avoid the internal plat_sdl_change_video_mode
+    plat_sdl_resize(event->resize.w, event->resize.h);
+  else
+    plat_sdl_event_handler(event_);
 }
 
 void plat_init(void)
@@ -561,7 +571,7 @@ void plat_init(void)
 	in_sdl_platform_data.joy_map = in_sdl_joy_map,
 	in_sdl_platform_data.key_names = in_sdl_key_names,
 	in_sdl_platform_data.kbd_map = in_sdl_kbd_map,
-	in_sdl_init(&in_sdl_platform_data, plat_sdl_event_handler);
+	in_sdl_init(&in_sdl_platform_data, plat_sdl_handler);
 	in_probe();
 
 	// create an artificial resize event to initialize mouse scaling
