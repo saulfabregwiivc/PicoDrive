@@ -86,6 +86,7 @@ endif
 CFLAGS += -DREVISION=\"$(GIT_REVISION)\"
 
 # default settings
+use_libtremor ?= 1
 use_libchdr ?= 1
 ifeq "$(ARCH)" "arm"
 use_cyclone ?= 1
@@ -340,8 +341,30 @@ OBJS += platform/common/mp3_drmp3.o
 endif
 endif
 
+ifeq (1,$(use_libtremor))
+CFLAGS += -DUSE_LIBTREMOR
+
 ifeq (1,$(use_libchdr))
 CFLAGS += -DUSE_LIBCHDR
+
+# tremor
+TRMR = pico/cd/tremor
+TRMR_OBJS += $(TRMR)/bitwise.o
+TRMR_OBJS += $(TRMR)/block.o
+TRMR_OBJS += $(TRMR)/codebook.o
+TRMR_OBJS += $(TRMR)/floor0.o
+TRMR_OBJS += $(TRMR)/floor1.o
+TRMR_OBJS += $(TRMR)/framing.o
+TRMR_OBJS += $(TRMR)/info.o
+TRMR_OBJS += $(TRMR)/mapping0.o
+TRMR_OBJS += $(TRMR)/mdct.o
+TRMR_OBJS += $(TRMR)/registry.o
+TRMR_OBJS += $(TRMR)/res012.o
+TRMR_OBJS += $(TRMR)/sharedbook.o
+TRMR_OBJS += $(TRMR)/synthesis.o
+TRMR_OBJS += $(TRMR)/vorbisfile.o
+TRMR_OBJS += $(TRMR)/window.o
+
 
 # chdr
 CHDR = pico/cd/libchdr
@@ -368,7 +391,7 @@ ZSTD_OBJS += $(ZSTD)/decompress/zstd_decompress_block.o
 ZSTD_OBJS += $(ZSTD)/decompress/zstd_decompress.o
 $(ZSTD_OBJS) $(CHDR_OBJS): CFLAGS += -I$(ZSTD) -Wno-unused
 
-OBJS += $(CHDR_OBJS) $(ZSTD_OBJS)
+OBJS += $(TRMR_OBJS) $(CHDR_OBJS) $(ZSTD_OBJS)
 ifneq ($(STATIC_LINKING), 1)
 OBJS += $(LZMA_OBJS)
 endif
