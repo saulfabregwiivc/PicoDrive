@@ -344,9 +344,6 @@ endif
 ifeq (1,$(use_libtremor))
 CFLAGS += -DUSE_LIBTREMOR
 
-ifeq (1,$(use_libchdr))
-CFLAGS += -DUSE_LIBCHDR
-
 # tremor
 TRMR = pico/cd/tremor
 TRMR_OBJS += $(TRMR)/bitwise.o
@@ -365,6 +362,10 @@ TRMR_OBJS += $(TRMR)/synthesis.o
 TRMR_OBJS += $(TRMR)/vorbisfile.o
 TRMR_OBJS += $(TRMR)/window.o
 
+endif
+
+ifeq (1,$(use_libchdr))
+CFLAGS += -DUSE_LIBCHDR
 
 # chdr
 CHDR = pico/cd/libchdr
