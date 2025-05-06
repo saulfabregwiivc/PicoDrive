@@ -26,6 +26,8 @@ static void *shadow_fb;
 static int shadow_size;
 static struct area { int w, h; } area;
 
+static int resized;
+
 static struct in_pdata in_sdl_platform_data;
 
 static int hide_cursor;
@@ -205,8 +207,8 @@ static int clear_buf_cnt, clear_stat_cnt;
 static void resize_buffers(void)
 {
 	// make sure the shadow buffers are big enough in case of resize
-	if (shadow_size < g_menuscreen_w * g_menuscreen_h * 2) {
-		shadow_size = g_menuscreen_w * g_menuscreen_h * 2;
+	if (shadow_size < g_menuscreen_pp * g_menuscreen_h * 2) {
+		shadow_size = g_menuscreen_pp * g_menuscreen_h * 2;
 		shadow_fb = realloc(shadow_fb, shadow_size);
 		g_menubg_ptr = realloc(g_menubg_ptr, shadow_size);
 	}
@@ -268,8 +270,6 @@ void plat_video_set_shadow(int w, int h)
 
 void plat_video_flip(void)
 {
-	resize_buffers();
-
 	if (plat_sdl_overlay != NULL) {
 		SDL_Rect dstrect =
 			{ 0, 0, plat_sdl_screen->w, plat_sdl_screen->h };
@@ -296,19 +296,7 @@ void plat_video_flip(void)
 			SDL_UnlockSurface(plat_sdl_screen);
 		SDL_Flip(plat_sdl_screen);
 
-		// take over resized settings for the physical SDL surface
-		if ((plat_sdl_screen->w != g_menuscreen_w ||
-		    plat_sdl_screen->h != g_menuscreen_h)  && plat_sdl_is_windowed() &&
-		    SDL_WM_GrabInput(SDL_GRAB_ON) == SDL_GRAB_ON) {
-			plat_sdl_change_video_mode(g_menuscreen_w, g_menuscreen_h, -1);
-			SDL_WM_GrabInput(SDL_GRAB_OFF);
-			g_menuscreen_pp = plat_sdl_screen->pitch/2;
-
-			// force upper layer to use new dimensions
-			plat_video_set_shadow(g_screen_width, g_screen_height);
-			plat_video_set_buffer(g_screen_ptr);
-			rendstatus_old = -1;
-		} else if (!copy) {
+		if (!copy) {
 			g_screen_ppitch = plat_sdl_screen->pitch/2;
 			g_screen_ptr = plat_sdl_screen->pixels;
 			plat_video_set_buffer(g_screen_ptr);
@@ -323,13 +311,21 @@ void plat_video_flip(void)
 		}
 	}
 
-	// for overlay/gl modes buffer ptr may change on resize
-	if ((plat_sdl_overlay || plat_sdl_gl_active) &&
-	    (g_screen_ptr != shadow_fb || g_screen_ppitch != g_screen_width)) {
-		g_screen_ppitch = g_screen_width;
-		g_screen_ptr = shadow_fb;
+	// take over resized settings for the physical SDL surface
+	if (resized && plat_sdl_is_windowed() &&
+	    SDL_WM_GrabInput(SDL_GRAB_ON) == SDL_GRAB_ON) {
+		plat_sdl_change_video_mode(g_menuscreen_w, g_menuscreen_h, -1);
+		SDL_WM_GrabInput(SDL_GRAB_OFF);
+		g_menuscreen_pp = plat_sdl_screen->pitch/2;
+		resize_buffers();
+
+		// force upper layer to use new dimensions
+		plat_video_set_shadow(g_screen_width, g_screen_height);
 		plat_video_set_buffer(g_screen_ptr);
+		rendstatus_old = -1;
+		resized = 0;
 	}
+
 	if (clear_stat_cnt) {
 		unsigned short *d = (unsigned short *)g_screen_ptr + g_screen_ppitch * g_screen_height;
 		int l = g_screen_ppitch * 8;
@@ -438,7 +434,6 @@ void plat_video_loop_prepare(void)
 	// take over any new vout settings
 	area = (struct area) { 0, 0 };
 	plat_sdl_change_video_mode(0, 0, 0);
-	resize_buffers();
 
 	// switch over to scaled output if available, but keep the aspect ratio
 	if (plat_sdl_overlay || plat_sdl_gl_active)
@@ -477,9 +472,10 @@ static void plat_sdl_resize(int w, int h)
 	if (currentConfig.vscaling != EOPT_SCALE_HW && w == 320 && h == 480) {
 		g_menuscreen_h = 240;
 		g_menuscreen_w = 320;
+		resized = 1;
 	} else
 #endif
-	{
+	if (g_menuscreen_w != (w & ~3) || g_menuscreen_h != (h & ~3)){
 		g_menuscreen_h = h & ~3;
 		g_menuscreen_w = w & ~3;
 #if 0 // auto resizing may be nice, but creates problems on some SDL platforms
@@ -498,9 +494,8 @@ static void plat_sdl_resize(int w, int h)
 			}
 		}
 #endif
+		resized = 1;
 	}
-
-	rendstatus_old = -1;
 }
 
 static void plat_sdl_quit(void)
