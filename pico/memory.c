@@ -942,8 +942,7 @@ static void PicoWrite8_z80(u32 a, u32 d)
     return;
   }
   if ((a & 0x6000) == 0x4000) { // FM Sound
-    if (PicoIn.opt & POPT_EN_FM)
-      ym2612_write_local(a & 3, d & 0xff, 0);
+    ym2612_write_local(a & 3, d & 0xff, 0);
     return;
   }
   // TODO: probably other VDP access too? Maybe more mirrors?
@@ -1688,8 +1687,7 @@ static unsigned char z80_md_bank_read(unsigned short a)
 
 static void z80_md_ym2612_write(unsigned int a, unsigned char data)
 {
-  if (PicoIn.opt & POPT_EN_FM)
-    ym2612_write_local(a, data, 1);
+  ym2612_write_local(a, data, 1);
 }
 
 static void z80_md_vdp_br_write(unsigned int a, unsigned char data)
