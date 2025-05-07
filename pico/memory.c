@@ -1328,7 +1328,7 @@ void ym2612_sync_timers(int z80_cycles, int mode_old, int mode_new)
        * Starting a timer takes place at the next tick, so xcycles needs to be
        * rounded up to that: t = next tick# = (xcycles / TICK_ZCYCLES) + 1
        */
-      unsigned t = ((xcycles * (((1LL<<32)/TIMER_A_TICK_ZCYCLES)+1))>>32) + 1;
+      unsigned t = DIVQ32(xcycles, TIMER_A_TICK_ZCYCLES) + 1;
       Pico.t.timer_a_next_oflow = t*TIMER_A_TICK_ZCYCLES + Pico.t.timer_a_step;
     }
   }
@@ -1351,7 +1351,7 @@ void ym2612_sync_timers(int z80_cycles, int mode_old, int mode_new)
        * reset by loading timer b. The first run of timer b after loading is
        * therefore shorter by up to 15 ticks.
        */
-      unsigned t = ((xcycles * (((1LL<<32)/TIMER_A_TICK_ZCYCLES)+1))>>32) + 1;
+      unsigned t = DIVQ32(xcycles, TIMER_A_TICK_ZCYCLES) + 1;
       int step = Pico.t.timer_b_step - TIMER_A_TICK_ZCYCLES*(t&15);
       Pico.t.timer_b_next_oflow = t*TIMER_A_TICK_ZCYCLES + step;
     }
@@ -1526,9 +1526,9 @@ int ym2612_pack_timers(void *buf, size_t size)
   if (Pico.t.ym2612_busy > 0)
     busy = cycles_z80_to_68k(Pico.t.ym2612_busy);
   if (Pico.t.timer_a_next_oflow != TIMER_NO_OFLOW)
-    tat = ((Pico.t.timer_a_step - Pico.t.timer_a_next_oflow) * ((1LL<<32)/TIMER_A_TICK_ZCYCLES+1))>>16;
+    tat = MULQ((Pico.t.timer_a_step - Pico.t.timer_a_next_oflow), INVQ32(TIMER_A_TICK_ZCYCLES), 16);
   if (Pico.t.timer_b_next_oflow != TIMER_NO_OFLOW)
-    tbt = ((Pico.t.timer_b_step - Pico.t.timer_b_next_oflow) * ((1LL<<32)/TIMER_B_TICK_ZCYCLES+1))>>16;
+    tbt = MULQ((Pico.t.timer_b_step - Pico.t.timer_b_next_oflow), INVQ32(TIMER_B_TICK_ZCYCLES), 16);
   elprintf(EL_YMTIMER, "save: timer a %i/%i", tat >> 16, tac);
   elprintf(EL_YMTIMER, "save: timer b %i/%i", tbt >> 16, tbc);
 

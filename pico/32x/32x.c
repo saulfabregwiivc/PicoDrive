@@ -282,7 +282,7 @@ void Pico32xDrawSync(SH2 *sh2)
   // the fast renderer isn't operating on a line-by-line base
   if (sh2 && !(PicoIn.opt & POPT_ALT_RENDERER)) {
     unsigned int cycle = (sh2 ? sh2_cycles_done_m68k(sh2) : SekCyclesDone());
-    int line = ((cycle - Pico.t.m68c_frame_start) * (long long)((1LL<<32)/488.5)) >> 32;
+    int line = DIVQ32(cycle - Pico.t.m68c_frame_start, 488.5);
 
     if (Pico32x.sync_line < line && line < (Pico.video.reg[1] & 8 ? 240 : 224)) {
       // make sure the MD image is also sync'ed to this line for merging

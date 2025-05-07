@@ -1233,7 +1233,7 @@ void PicoVideoTriggerTH(int x, int y)
 
   // TODO x/y scaling for V28/V30, H32/H40, soft/hardscaling?
   if (!(pv->reg[12]&1)) { // H32, convert from 320 to 256 px per line
-    slot = (x * ((256LL<<32)/320) >> 32) / 2;
+    slot = DIVQ32(x * 256, 320) / 2;
     if (slot >= gapstart32) slot += gapend32-gapstart32;
   } else {
     slot = x / 2;

@@ -505,8 +505,8 @@ static unsigned char z80_sms_in(unsigned short a)
           if (Pico.ms.io_ctl & 0x02) d |= 0x40;
           if (Pico.m.hardware & PMS_HW_LG) { // light phaser
             // TODO mx/my scaling is wrong if V28/V30 mode is used?
-            int mx = (PicoIn.mouseInt[0]+PicoIn.gunx) * 256*((1LL<<32)/320) >> 32;
-            int my = (PicoIn.mouseInt[1]+PicoIn.guny) * 192*((1LL<<32)/224) >> 32;
+            int mx = DIVQ32((PicoIn.mouseInt[0]+PicoIn.gunx) * 256, 320);
+            int my = DIVQ32((PicoIn.mouseInt[1]+PicoIn.guny) * 192, 224);
             int x = vdp_hcounter(z80_cyclesDone() - Pico.t.z80c_line_start);
             int dx = 2*x - mx;
             int dy = Pico.m.scanline - my;
@@ -1389,7 +1389,7 @@ int PicoPlayTape(const char *fname)
   }
 
   pt->cycles_sample = (Pico.m.pal ? OSC_PAL/15 : OSC_NTSC/15) / rate;
-  pt->cycles_mult = (1LL<<32) / pt->cycles_sample;
+  pt->cycles_mult = INVQ32(pt->cycles_sample);
   pt->cycle = Pico.t.z80c_aim;
   pt->phase = Pico.t.z80c_aim;
   pt->pause = 0;
@@ -1432,7 +1432,7 @@ int PicoRecordTape(const char *fname)
   }
 
   pt->cycles_sample = (Pico.m.pal ? OSC_PAL/15 : OSC_NTSC/15) / rate;
-  pt->cycles_mult = (1LL<<32) / pt->cycles_sample;
+  pt->cycles_mult = INVQ32(pt->cycles_sample);
   pt->cycle = Pico.t.z80c_aim;
   pt->phase = Pico.t.z80c_aim;
   pt->pause = 0;
