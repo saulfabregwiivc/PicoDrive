@@ -123,7 +123,6 @@ void Pico32xStartup(void)
 
   PicoMemSetup32x();
   p32x_pwm_ctl_changed();
-  p32x_timers_recalc();
 
   Pico32x.regs[0] |= P32XS_ADEN;
 
@@ -246,8 +245,6 @@ void PicoReset32x(void)
     p32x_m68k_poll_event(0, -1);
     p32x_sh2_poll_event(msh2.poll_addr, &msh2, SH2_IDLE_STATES, Pico.t.m68c_aim);
     p32x_sh2_poll_event(ssh2.poll_addr, &ssh2, SH2_IDLE_STATES, Pico.t.m68c_aim);
-    p32x_pwm_ctl_changed();
-    p32x_timers_recalc();
   }
 }
 
@@ -397,6 +394,16 @@ static void vint_event(unsigned int now)
   p32x_trigger_irq(NULL, now, P32XI_VINT);
 }
 
+static void mtimer_event(unsigned int now)
+{
+  p32x_timer_irq(&msh2, now);
+}
+
+static void stimer_event(unsigned int now)
+{
+  p32x_timer_irq(&ssh2, now);
+}
+
 typedef void (event_cb)(unsigned int now);
 
 /* times are in m68k (7.6MHz) cycles */
@@ -407,6 +414,8 @@ static event_cb *p32x_event_cbs[P32X_EVENT_COUNT] = {
   fillend_event,      // P32X_EVENT_FILLEND
   hint_event,         // P32X_EVENT_HINT
   vint_event,         // P32X_EVENT_VINT
+  mtimer_event,       // P32X_EVENT_MTIMER
+  stimer_event,       // P32X_EVENT_STIMER
 };
 
 // schedule event at some time 'after', in m68k clocks
@@ -541,7 +550,7 @@ void p32x_sync_other_sh2(SH2 *sh2, unsigned int m68k_target)
 /* most timing is in 68k clock */
 void sync_sh2s_normal(unsigned int m68k_target)
 {
-  unsigned int now, target, next, timer_cycles;
+  unsigned int now, target, next;
   int cycles;
 
   elprintf(EL_32X, "sh2 sync to %u", m68k_target);
@@ -554,7 +563,6 @@ void sync_sh2s_normal(unsigned int m68k_target)
   now = msh2.m68krcycles_done;
   if (CYCLES_GT(now, ssh2.m68krcycles_done))
     now = ssh2.m68krcycles_done;
-  timer_cycles = now;
 
   pprof_start(m68k);
   while (CYCLES_GT(m68k_target, now))
@@ -611,20 +619,7 @@ void sync_sh2s_normal(unsigned int m68k_target)
         if (!(ssh2.state & SH2_IDLE_STATES)) 
           now = ssh2.m68krcycles_done;
       }
-      if (CYCLES_GT(now, timer_cycles+STEP_N)) {
-        if  (msh2.state & SH2_TIMER_RUN)
-          p32x_timer_do(&msh2, now - timer_cycles);
-        if  (ssh2.state & SH2_TIMER_RUN)
-          p32x_timer_do(&ssh2, now - timer_cycles);
-        timer_cycles = now;
-      }
     }
-
-    if  (msh2.state & SH2_TIMER_RUN)
-      p32x_timer_do(&msh2, now - timer_cycles);
-    if  (ssh2.state & SH2_TIMER_RUN)
-      p32x_timer_do(&ssh2, now - timer_cycles);
-    timer_cycles = now;
   }
   pprof_end_sub(m68k);
 
@@ -637,9 +632,6 @@ void sync_sh2s_normal(unsigned int m68k_target)
     if (CYCLES_GT(m68k_target, ssh2.m68krcycles_done))
       ssh2.m68krcycles_done = m68k_target;
   }
-
-  // everyone is in sync now
-  Pico32x.comm_dirty = 0;
 }
 
 void sync_sh2s_lockstep(unsigned int m68k_target)
@@ -684,6 +676,9 @@ void PicoFrame32x(void)
     Pico.est.rendstatus |= PDRAW_SYNC_NEEDED;
   PicoFrameHints();
 
+  p32x_timer_do(&msh2, Pico.t.m68c_aim);
+  p32x_timer_do(&ssh2, Pico.t.m68c_aim);
+
   elprintf(EL_32X, "poll: %02x %02x %02x",
     Pico32x.emu_flags & 3, msh2.state, ssh2.state);
 }
@@ -715,7 +710,7 @@ void Pico32xStateLoaded(int is_early)
       CYCLES_GE(sh2s[1].m68krcycles_done - Pico.t.m68c_aim, 500))
     sh2s[0].m68krcycles_done = sh2s[1].m68krcycles_done = Pico.t.m68c_aim;
   p32x_update_irls(NULL, Pico.t.m68c_aim);
-  p32x_timers_recalc();
+  sh2_peripheral_state_loaded();
   p32x_pwm_state_loaded();
   p32x_run_events(Pico.t.m68c_aim);
 
