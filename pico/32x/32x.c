@@ -219,6 +219,7 @@ void Pico32xInit(void)
 void PicoPower32x(void)
 {
   memset(&Pico32x, 0, sizeof(Pico32x));
+  memset(p32x_event_times, 0, sizeof(p32x_event_times));
 
   Pico32x.regs[0] = P32XS_REN|P32XS_nRES; // verified
   Pico32x.regs[0x10/2] = 0xffff;
@@ -241,10 +242,10 @@ void PicoUnload32x(void)
 void PicoReset32x(void)
 {
   if (PicoIn.AHW & PAHW_32X) {
-    p32x_trigger_irq(NULL, SekCyclesDone(), P32XI_VRES);
+    p32x_trigger_irq(NULL, Pico.t.m68c_aim, P32XI_VRES);
     p32x_m68k_poll_event(0, -1);
-    p32x_sh2_poll_event(msh2.poll_addr, &msh2, SH2_IDLE_STATES, SekCyclesDone());
-    p32x_sh2_poll_event(ssh2.poll_addr, &ssh2, SH2_IDLE_STATES, SekCyclesDone());
+    p32x_sh2_poll_event(msh2.poll_addr, &msh2, SH2_IDLE_STATES, Pico.t.m68c_aim);
+    p32x_sh2_poll_event(ssh2.poll_addr, &ssh2, SH2_IDLE_STATES, Pico.t.m68c_aim);
     p32x_pwm_ctl_changed();
     p32x_timers_recalc();
   }
@@ -712,11 +713,11 @@ void Pico32xStateLoaded(int is_early)
 
   if (CYCLES_GE(sh2s[0].m68krcycles_done - Pico.t.m68c_aim, 500) ||
       CYCLES_GE(sh2s[1].m68krcycles_done - Pico.t.m68c_aim, 500))
-    sh2s[0].m68krcycles_done = sh2s[1].m68krcycles_done = SekCyclesDone();
-  p32x_update_irls(NULL, SekCyclesDone());
+    sh2s[0].m68krcycles_done = sh2s[1].m68krcycles_done = Pico.t.m68c_aim;
+  p32x_update_irls(NULL, Pico.t.m68c_aim);
   p32x_timers_recalc();
   p32x_pwm_state_loaded();
-  p32x_run_events(SekCyclesDone());
+  p32x_run_events(Pico.t.m68c_aim);
 
   // TODO wakeup CPUs for now. poll detection stuff must go to the save state!
   p32x_m68k_poll_event(0, -1);

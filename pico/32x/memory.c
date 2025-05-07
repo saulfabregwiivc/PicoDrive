@@ -184,7 +184,7 @@ static NOINLINE void sh2s_sync_on_read(SH2 *sh2, unsigned cycles)
 // This is used to correctly deliver syncronisation data to the 3 cpus. The
 // fifo stores 16 bit values, 8/32 bit accesses must be adapted accordingly.
 #define PFIFO_SZ	4
-#define PFIFO_CNT	16
+#define PFIFO_CNT	8
 struct sh2_poll_fifo {
   u32 cycles;
   u32 a;
@@ -947,8 +947,8 @@ static void p32x_sh2reg_write16(u32 a, u32 d, SH2 *sh2)
       Pico32x.sh2irqi[sh2->is_slave] &= ~P32XI_HINT;
       goto irls;
     case 0x1a/2:
-      Pico32x.regs[2 / 2] &= ~(1 << sh2->is_slave);
       p32x_sync_other_sh2(sh2, sh2_cycles_done_m68k(sh2));
+      Pico32x.regs[2 / 2] &= ~(1 << sh2->is_slave);
       p32x_update_cmd_irq(sh2, 0);
       return;
     case 0x1c/2:
@@ -2539,7 +2539,8 @@ void Pico32xMemStateLoaded(void)
   ssh2.poll_addr = ssh2.poll_cycles = ssh2.poll_cnt = 0;
   memset(sh2_poll_fifo, 0, sizeof(sh2_poll_fifo));
 
-  sh2_drc_flush_all();
+  if (Pico32x.emu_flags & P32XF_DRC_ROM_C)
+    sh2_drc_flush_all();
 }
 
 // vim:shiftwidth=2:ts=2:expandtab
