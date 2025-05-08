@@ -437,6 +437,9 @@ void p32x_event_schedule_sh2(SH2 *sh2, enum p32x_event event, int after)
   unsigned int now = sh2_cycles_done_m68k(sh2);
   int left_to_next;
 
+  if (sh2->state & SH2_IDLE_STATES)
+    now = SekCyclesDone();
+
   p32x_event_schedule(now, event, after);
 
   left_to_next = C_M68K_TO_SH2(sh2, (int)(event_time_next - now));
