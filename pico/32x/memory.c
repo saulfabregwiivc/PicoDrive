@@ -2539,8 +2539,7 @@ void Pico32xMemStateLoaded(void)
   ssh2.poll_addr = ssh2.poll_cycles = ssh2.poll_cnt = 0;
   memset(sh2_poll_fifo, 0, sizeof(sh2_poll_fifo));
 
-  if (Pico32x.emu_flags & P32XF_DRC_ROM_C)
-    sh2_drc_flush_all();
+  sh2_drc_flush_all();
 }
 
 // vim:shiftwidth=2:ts=2:expandtab
