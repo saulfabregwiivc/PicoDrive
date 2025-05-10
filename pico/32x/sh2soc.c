@@ -70,7 +70,8 @@ static void dmac_te_irq(SH2 *sh2, struct dma_chan *chan)
                dmac->vcrdma0 : dmac->vcrdma1;
 
   elprintf(EL_32XP, "dmac irq %d %d", level, vector);
-  sh2_internal_irq(sh2, level, vector & 0x7f);
+  if (level)
+    sh2_internal_irq(sh2, level, vector & 0x7f);
 }
 
 static void dmac_transfer_complete(SH2 *sh2, struct dma_chan *chan)
@@ -212,7 +213,9 @@ void p32x_timer_recalc(SH2 *sh2)
     tmp = (1 << timer_tick_shift[i]) - Pico32x.wdt_cycle[i]; // current tick
     if (tmp < 0) tmp = 0; // in case of invalid tick cycle data
     tmp += (255 - PREG8(sh2->peri_regs, 0x81)) << timer_tick_shift[i];
-    p32x_event_schedule_sh2(sh2, P32X_EVENT_MTIMER+i, DIVQ32(tmp,3));
+
+    if (PREG8(sh2->peri_regs, 0xe3) >> 4)
+      p32x_event_schedule_sh2(sh2, P32X_EVENT_MTIMER+i, DIVQ32(tmp,3));
   }
 }
 
@@ -250,8 +253,10 @@ void p32x_timer_irq(SH2 *sh2, unsigned int now)
     elprintf(EL_32XP, "%csh2 WDT irq (%d, %d)",
       sh2->is_slave ? 's' : 'm', level, vector);
 
-    sh2_internal_irq(sh2, level, vector);
-    p32x_event_schedule_sh2(sh2, P32X_EVENT_MTIMER+i, DIVQ32(after,3));
+    if (level) {
+      sh2_internal_irq(sh2, level, vector);
+      p32x_event_schedule_sh2(sh2, P32X_EVENT_MTIMER+i, DIVQ32(after,3));
+    }
 
     // reset counting to avoid rounding errors
     PREG8(pregs, 0x81) = 0x00;
@@ -369,7 +374,8 @@ static void sci_trigger(SH2 *sh2, u8 *r)
     int vector = PREG8(oregs, 0x64) & 0x7f;
     elprintf_sh2(sh2, EL_32XP, "SCI tx irq (%d, %d)",
       level, vector);
-    sh2_internal_irq(sh2, level, vector);
+    if (level)
+      sh2_internal_irq(sh2, level, vector);
   }
   // TODO: TEIE
   if (PREG8(oregs, 2) & 0x40) { // RIE - rx irq enabled
@@ -377,7 +383,8 @@ static void sci_trigger(SH2 *sh2, u8 *r)
     int vector = PREG8(oregs, 0x63) & 0x7f;
     elprintf_sh2(sh2->other_sh2, EL_32XP, "SCI rx irq (%d, %d)",
       level, vector);
-    sh2_internal_irq(sh2->other_sh2, level, vector);
+    if (level)
+      sh2_internal_irq(sh2->other_sh2, level, vector);
   }
 }
 
@@ -418,6 +425,10 @@ void REGPARM(3) sh2_peripheral_write8(u32 a, u32 d, SH2 *sh2)
     d |= 0xe0;
     PREG8(r, a) = d;
     break;
+  case 0x0e3:
+    p32x_timer_do(sh2, sh2_cycles_done_m68k(sh2));
+    p32x_timer_recalc(sh2);
+    break;
   default:
     if ((a & 0x1c0) == 0x140)
       p32x_sh2_poll_event(a, sh2, SH2_STATE_CPOLL, SekCyclesDone());
@@ -449,6 +460,10 @@ void REGPARM(3) sh2_peripheral_write16(u32 a, u32 d, SH2 *sh2)
     p32x_timer_recalc(sh2);
   } else {
     r[MEM_BE2(a / 2)] = d;
+    if (a == 0x0e2) {
+      p32x_timer_do(sh2, sh2_cycles_done_m68k(sh2));
+      p32x_timer_recalc(sh2);
+    }
     if ((a & 0x1c0) == 0x140)
       p32x_sh2_poll_event(a, sh2, SH2_STATE_CPOLL, SekCyclesDone());
   }
