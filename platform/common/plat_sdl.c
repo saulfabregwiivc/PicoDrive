@@ -570,7 +570,7 @@ void plat_init(void)
 	in_probe();
 
 	// create an artificial resize event to initialize mouse scaling
-	SDL_Event ev;
+	static SDL_Event ev;
 	ev.resize.type = SDL_VIDEORESIZE;
 	ev.resize.w = g_menuscreen_w;
 	ev.resize.h = g_menuscreen_h;

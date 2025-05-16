@@ -1328,10 +1328,10 @@ static void run_events_ui(unsigned int which)
 	{
 		if (currentConfig.EmuOpt & EOPT_MOUSE) {
 			grab_mode = !grab_mode;
-			in_update_analog(0, 2, &mouse_x);
-			in_update_analog(0, 3, &mouse_y);
-			in_update_analog(0, 0, &mouse_x);
-			in_update_analog(0, 1, &mouse_y);
+			in_update_pointer(0, 2, &mouse_x);
+			in_update_pointer(0, 3, &mouse_y);
+			in_update_pointer(0, 0, &mouse_x);
+			in_update_pointer(0, 1, &mouse_y);
 			emu_status_msg("Mouse capture %s", grab_mode ? "on" : "off");
 		} else {
 			grab_mode = 0;
@@ -1400,22 +1400,22 @@ void emu_update_input(void)
 	// update mouse coordinates if there is an emulated mouse
 	if (currentConfig.EmuOpt & EOPT_MOUSE) {
 		if (!grab_mode) {
-			in_update_analog(0, 0, &mouse_x);
-			in_update_analog(0, 1, &mouse_y);
+			in_update_pointer(0, 0, &mouse_x);
+			in_update_pointer(0, 1, &mouse_y);
 			// scale mouse coordinates from -1024..1024 to 0..screen_w/h
 			PicoIn.mouse[0] = (mouse_x+1024) * 320/2048;
 			PicoIn.mouse[1] = (mouse_y+1024) * 240/2048;
 		} else {
 			int xrel, yrel;
-			in_update_analog(0, 2, &xrel);
-			in_update_analog(0, 3, &yrel);
+			in_update_pointer(0, 2, &xrel);
+			in_update_pointer(0, 3, &yrel);
 			mouse_x += xrel, mouse_y += yrel;
 			// scale mouse coordinates from -1024..1024 to 0..screen_w/h
 			PicoIn.mouse[0] = (mouse_x+1024) * 320/2048;
 			PicoIn.mouse[1] = (mouse_y+1024) * 240/2048;
 		}
 
-		in_update_analog(0, -1, &i); // get mouse buttons, bit 2-0 = RML
+		in_update_pointer(0, -1, &i); // get mouse buttons, bit 2-0 = RML
 
 		pl_actions[0] |= map_pointer_buttons(i, currentConfig.input_dev0);
 		pl_actions[1] |= map_pointer_buttons(i, currentConfig.input_dev1);
@@ -1843,7 +1843,7 @@ void emu_loop(void)
 			}
 			if (diff > target_frametime + vsync_delay) {
 				// still too fast
-				plat_wait_till_us(timestamp + (diff - target_frametime));
+				plat_wait_till_us(timestamp + (diff - target_frametime - vsync_delay));
 			}
 		}
 
