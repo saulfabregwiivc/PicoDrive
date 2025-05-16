@@ -677,6 +677,14 @@ NOINLINE void io_ports_write(u32 a, u32 d)
   PicoMem.ioports[a] = d;
 }
 
+void io_ports_reset(void)
+{
+  int port;
+
+  for (port = 0; port < 3; port++)
+    padTLLatency[port] = padTHLatency[port] = padTHTimeout[port] = SekCyclesDone();
+}
+
 int io_ports_pack(void *buf, size_t size)
 {
   size_t b, i;

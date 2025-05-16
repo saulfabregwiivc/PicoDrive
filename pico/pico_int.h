@@ -760,6 +760,7 @@ void PicoWrite16_io(u32 a, u32 d);
 void PicoPortUpdate(void);
 void PicoPortTrigger(void);
 u32 PicoReadPad(int i, u32 mask);
+void io_ports_reset(void);
 int io_ports_pack(void *buf, size_t size);
 void io_ports_unpack(const void *buf, size_t size);
 extern int port_type[3];
