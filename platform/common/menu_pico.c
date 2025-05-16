@@ -1431,12 +1431,12 @@ static void draw_frame_credits(void)
 
 static const char credits[] =
 	"PicoDrive v" VERSION "\n"
-	"(c) notaz, 2006-2013; irixxxx, 2018-2024\n\n"
+	"(c) notaz, 2006-2013; irixxxx, 2018-2025\n\n"
 	"Credits:\n"
-	"fDave: initial code\n"
 #ifdef EMU_C68K
-	"      Cyclone 68000 core\n"
+	"fDave: initial code, Cyclone 68000 core"
 #else
+	"fDave: initial code\n"
 	"Stef, Chui: FAME/C 68k core\n"
 #endif
 #ifdef _USE_DRZ80
@@ -1451,12 +1451,17 @@ static const char credits[] =
 	"Squidge: mmuhack\n"
 	"Dzz: ARM940 sample\n"
 #endif
+#if defined __PSP__ || defined __PS2__
+	"fjtrujy: PSP and PS2 platform code\n"
+#endif
 	"\n"
 	"special thanks (for docs, ideas):\n"
 	" Charles MacDonald, Haze,\n"
 	" Stephane Dallongeville,\n"
 	" Lordus, Exophase, Rokas,\n"
-	" Eke, Nemesis, Tasco Deluxe";
+	" Eke, Nemesis, Tasco Deluxe,\n"
+	"special thanks (for testing):\n"
+	" DrUm78, jdgleaver, freq_mod";
 
 static void menu_main_draw_status(void)
 {
