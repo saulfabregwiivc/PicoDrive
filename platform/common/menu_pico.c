@@ -1434,7 +1434,7 @@ static const char credits[] =
 	"(c) notaz, 2006-2013; irixxxx, 2018-2025\n\n"
 	"Credits:\n"
 #ifdef EMU_C68K
-	"fDave: initial code, Cyclone 68000 core"
+	"fDave: initial code, Cyclone 68000 core\n"
 #else
 	"fDave: initial code\n"
 	"Stef, Chui: FAME/C 68k core\n"
