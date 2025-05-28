@@ -206,6 +206,12 @@ static int clear_buf_cnt, clear_stat_cnt;
 
 static void resize_buffers(void)
 {
+	// update pitch as it is needed for resizing, and the menu bg scaler
+	if (plat_sdl_overlay || plat_sdl_gl_active)
+		g_menuscreen_pp = g_menuscreen_w;
+	else
+		g_menuscreen_pp = plat_sdl_screen->pitch / 2;
+
 	// make sure the shadow buffers are big enough in case of resize
 	if (shadow_size < g_menuscreen_pp * g_menuscreen_h * 2) {
 		shadow_size = g_menuscreen_pp * g_menuscreen_h * 2;
@@ -316,7 +322,6 @@ void plat_video_flip(void)
 	    SDL_WM_GrabInput(SDL_GRAB_ON) == SDL_GRAB_ON) {
 		plat_sdl_change_video_mode(g_menuscreen_w, g_menuscreen_h, -1);
 		SDL_WM_GrabInput(SDL_GRAB_OFF);
-		g_menuscreen_pp = plat_sdl_screen->pitch/2;
 		resize_buffers();
 
 		// force upper layer to use new dimensions
@@ -367,12 +372,6 @@ void plat_video_menu_update(void)
 		} while (w != g_menuscreen_w || h != g_menuscreen_h);
 		SDL_WM_GrabInput(SDL_GRAB_OFF);
 	}
-
-	// update pitch as it is needed by the menu bg scaler
-	if (plat_sdl_overlay || plat_sdl_gl_active)
-		g_menuscreen_pp = g_menuscreen_w;
-	else
-		g_menuscreen_pp = plat_sdl_screen->pitch / 2;
 
 	resize_buffers();
 }

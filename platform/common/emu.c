@@ -1400,21 +1400,17 @@ void emu_update_input(void)
 		if (!grab_mode) {
 			in_update_pointer(0, 0, &mouse_x);
 			in_update_pointer(0, 1, &mouse_y);
-			// scale mouse coordinates from -1024..1024 to 0..screen_w/h
-			PicoIn.mouse[0] = (mouse_x+1024) * 320/2048;
-			PicoIn.mouse[1] = (mouse_y+1024) * 240/2048;
 		} else {
 			int xrel, yrel;
 			in_update_pointer(0, 2, &xrel);
 			in_update_pointer(0, 3, &yrel);
 			mouse_x += xrel, mouse_y += yrel;
-			// scale mouse coordinates from -1024..1024 to 0..screen_w/h
-			PicoIn.mouse[0] = (mouse_x+1024) * 320/2048;
-			PicoIn.mouse[1] = (mouse_y+1024) * 240/2048;
 		}
+		// scale mouse coordinates from -1024..1024 to 0..screen_w/h
+		PicoIn.mouse[0] = (mouse_x+1024) * 320/2048;
+		PicoIn.mouse[1] = (mouse_y+1024) * 240/2048;
 
 		in_update_pointer(0, -1, &i); // get mouse buttons, bit 2-0 = RML
-
 		pl_actions[0] |= map_pointer_buttons(i, currentConfig.input_dev0);
 		pl_actions[1] |= map_pointer_buttons(i, currentConfig.input_dev1);
 	}
