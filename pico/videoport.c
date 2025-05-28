@@ -1133,10 +1133,10 @@ PICO_INTERNAL_ASM u32 PicoVideoRead(u32 a)
       // at the start of the line, the latency in cycles already is in c.
       d = pv->hv_latch & 0xff;
       if (pv->reg[12]&1) { // H40/H32?
-        c = c * ((1LL*slots40<<32)/slcpu) >> 32; // slots since line start
+        c = DIVQ32(c * slots40, slcpu); // slots since line start
         if (d < gapstart40 && d+c >= gapstart40) d += gapend40-gapstart40;
       } else {
-        c = c * ((1LL*slots32<<32)/slcpu) >> 32;
+        c = DIVQ32(c * slots32, slcpu);
         if (d < gapstart32 && d+c >= gapstart32) d += gapend32-gapstart32;
       }
       d = (pv->hv_latch & 0xff00) | ((d+c) & 0x00ff);

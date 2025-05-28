@@ -155,8 +155,8 @@ static u8 vdp_hcounter(int cycles)
 {
   // 171 slots per scanline of 228 clocks, counted 0xf4-0x93, 0xe9-0xf3
   // this matches h counter tables in SMSVDPTest:
-  //  hc =   (cycles+2) *   171    /228      -1 + 0xf4;
-  int hc = (((cycles+2) * ((171<<8)/228))>>8)-1 + 0xf4; // Q8 to avoid dividing
+  //  hc =        (cycles+2) * 171 /228  -1 + 0xf4;
+  int hc = DIVQ32((cycles+2) * 171, 228) -1 + 0xf4;
   if (hc > 0x193) hc += 0xe9-0x93-1;
   return hc;
 }
