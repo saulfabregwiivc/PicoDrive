@@ -37,10 +37,8 @@
 
 #ifndef _WIN32
 #define PATH_SEP      "/"
-#define PATH_SEP_C    '/'
 #else
 #define PATH_SEP      "\\"
-#define PATH_SEP_C    '\\'
 #endif
 
 #define STATUS_MSG_TIMEOUT 2000
@@ -134,7 +132,7 @@ static void fname_ext(char *dst, int dstlen, const char *prefix, const char *ext
 	}
 
 	p = fname + strlen(fname) - 1;
-	for (; p >= fname && *p != PATH_SEP_C; p--)
+	for (; p >= fname && *p != *PATH_SEP; p--)
 		;
 	p++;
 	strncpy(dst + prefix_len, p, dstlen - prefix_len - 1);
