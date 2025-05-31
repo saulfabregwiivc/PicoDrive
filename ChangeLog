@@ -1,11 +1,15 @@
-2.05 (2025-05-xx)
+2.05 (2025-05-31)
   + added lightgun support for SDL platforms, using the host mouse for Menacer, Justifier, and Light Phaser
+  * improved handling of OpenGL (may enable OpenGL video mode on devices with JZ4770 CPUs)
+  * improved SDL Joystick/Pad support (should now work with what devices are supported by SDL)
+  * improved support for Windows platform
   * slightly improved SDL window resize handling
   * slightly improved UI for keyboard settings
   * fixed major VDP window rendering regression (games using a VDP window with color table != 0)
   * fixed interlaced mode rendering in ARMv7 assembly
   * fixed VDP sprite parsing for MD (fixes a test case in SpriteMaskingTestRom)
   * fixed crash in VDP rendering (DMA pointer wraparound)
+  * fixed pads not initialized correctly after state load
   * fixed 32X VINT timing
   * improved 32X interrupt handling (needs work, still not fully as the SH7604 handles it)
   * improved 32X WDT handling
