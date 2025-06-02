@@ -367,17 +367,14 @@ void plat_video_menu_update(void)
 	// WM may grab input while resizing the window; our own window resizing
 	// is only safe if the WM isn't active anymore, so try to grab input.
 	if (plat_sdl_is_windowed() && SDL_WM_GrabInput(SDL_GRAB_ON) == SDL_GRAB_ON) {
-		// w/h might change in resize callback
-		int w, h;
-		do {
-			w = g_menuscreen_w, h = g_menuscreen_h;
-			plat_sdl_change_video_mode(w, h, 1);
-		} while (w != g_menuscreen_w || h != g_menuscreen_h);
+		plat_sdl_change_video_mode(g_menuscreen_w, g_menuscreen_h, 1);
+		// w/h might change in change_video_mode, e.g. for fullscreen
+		g_menuscreen_w = plat_sdl_screen->w;
+		g_menuscreen_h = plat_sdl_screen->h;
 		plat_sdl_gl_scaling(currentConfig.filter);
 		SDL_WM_GrabInput(SDL_GRAB_OFF);
+		resize_buffers();
 	}
-
-	resize_buffers();
 }
 
 void plat_video_menu_enter(int is_rom_loaded)
