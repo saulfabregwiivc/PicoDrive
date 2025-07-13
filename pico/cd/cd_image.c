@@ -7,6 +7,7 @@
  */
 
 #include "../pico_int.h"
+#include <platform/common/tremor/ivorbisfile.h>
 #include "genplus_macros.h"
 #include "cdd.h"
 #include "cd_parse.h"
@@ -30,24 +31,20 @@ static int handle_mp3(const char *fname, int index)
   fs = ftell(tmp_file);
   fseek(tmp_file, 0, SEEK_SET);
 
+  kBps = mp3_get_bitrate(tmp_file, fs) / 8;
+  if (ret != 0 || kBps <= 0)
+  {
+    elprintf(EL_STATUS, "track %2i: mp3 bitrate %i", index+1, kBps);
+    fclose(tmp_file);
+    return -1;
+  }
+
 #ifdef _PSP_FW_VERSION
   // some systems (like PSP) can't have many open files at a time,
   // so we work with their names instead.
   fclose(tmp_file);
   tmp_file = (void *) strdup(fname);
 #endif
-
-  kBps = mp3_get_bitrate(tmp_file, fs) / 8;
-  if (ret != 0 || kBps <= 0)
-  {
-    elprintf(EL_STATUS, "track %2i: mp3 bitrate %i", index+1, kBps);
-#ifdef _PSP_FW_VERSION
-    free(tmp_file);
-#else
-    fclose(tmp_file);
-#endif
-    return -1;
-  }
 
   track->type = CT_MP3;
   track->fd = tmp_file;
@@ -56,6 +53,47 @@ static int handle_mp3(const char *fname, int index)
   fs *= 75;
   fs /= kBps * 1000;
   return fs;
+}
+
+static int handle_ogg(const char *fname, int index)
+{
+  track_t *track = &cdd.toc.tracks[index];
+  FILE *tmp_file;
+  OggVorbis_File tmp_ogg;
+  int kBps;
+  int fs, ret;
+
+  tmp_file = fopen(fname, "rb");
+  if (tmp_file == NULL)
+    return -1;
+  if (ov_open(tmp_file, &tmp_ogg, NULL, 0)) {
+    fclose(tmp_file);
+    return -1;
+  }
+
+  kBps = ov_bitrate(&tmp_ogg, -1) / 8;
+  fs = ov_time_total(&tmp_ogg, -1);
+  ov_clear(&tmp_ogg);
+
+  if (kBps <= 0)
+  {
+    elprintf(EL_STATUS, "track %2i: mp3 bitrate %i", index+1, kBps);
+    fclose(tmp_file);
+    return -1;
+  }
+
+#ifdef _PSP_FW_VERSION
+  // some systems (like PSP) can't have many open files at a time,
+  // so we work with their names instead.
+  fclose(tmp_file);
+  tmp_file = (void *) strdup(fname);
+#endif
+
+  track->type = CT_MP3;
+  track->fd = tmp_file;
+  track->offset = 0;
+
+  return fs * 75 / 1000;
 }
 
 static void to_upper(char *d, const char *s)
@@ -147,6 +185,12 @@ int load_cd_image(const char *cd_img_name, int *type)
       lba += cue_data->tracks[n].pregap;
       if (cue_data->tracks[n].type == CT_MP3) {
         ret = handle_mp3(cue_data->tracks[n].fname, index);
+        if (ret < 0)
+          break;
+        length = ret;
+      }
+      else if (cue_data->tracks[n].type == CT_OGG) {
+        ret = handle_ogg(cue_data->tracks[n].fname, index);
         if (ret < 0)
           break;
         length = ret;
