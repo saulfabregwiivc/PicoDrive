@@ -87,6 +87,7 @@ CFLAGS += -DREVISION=\"$(GIT_REVISION)\"
 
 # default settings
 use_libchdr ?= 1
+use_libtremor ?= 1
 ifeq "$(ARCH)" "arm"
 use_cyclone ?= 1
 use_drz80 ?= 1
@@ -328,6 +329,17 @@ else
 #OBJS += platform/common/mp3_minimp3.o
 OBJS += platform/common/mp3_drmp3.o
 endif
+endif
+
+ifeq (1,$(use_libtremor))
+TREMOR = platform/common/tremor
+OBJS += $(TREMOR)/block.o $(TREMOR)/codebook.o $(TREMOR)/floor0.o $(TREMOR)/floor1.o
+OBJS += $(TREMOR)/info.o $(TREMOR)/mapping0.o $(TREMOR)/mdct.o $(TREMOR)/registry.o
+OBJS += $(TREMOR)/res012.o $(TREMOR)/sharedbook.o $(TREMOR)/synthesis.o $(TREMOR)/window.o
+OBJS += $(TREMOR)/vorbisfile.o $(TREMOR)/framing.o $(TREMOR)/bitwise.o
+CFLAGS += -I$(TREMOR) #-DUSE_LIBTREMOR
+
+OBJS += platform/common/ogg.o
 endif
 
 ifeq (1,$(use_libchdr))
