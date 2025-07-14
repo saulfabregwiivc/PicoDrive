@@ -229,7 +229,7 @@ USE_FRONTEND = 1
 PLATFORM_MP3 ?= 1
 endif
 ifeq "$(PLATFORM)" "psp"
-CFLAGS += -DUSE_BGR565 -G8 # -DLPRINTF_STDIO -DFW15 -DBYTE_ORDER=LITTLE_ENDIAN
+CFLAGS += -DUSE_BGR565 -G8 -DBYTE_ORDER=LITTLE_ENDIAN # -DLPRINTF_STDIO -DFW15
 LDLIBS += -lpspgu -lpspge -lpsppower -lpspaudio -lpspdisplay -lpspaudiocodec
 LDLIBS += -lpspctrl
 platform/common/main.o: CFLAGS += -Dmain=pico_main
