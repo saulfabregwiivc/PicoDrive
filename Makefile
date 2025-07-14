@@ -65,6 +65,7 @@ ifeq ("$(PLATFORM)",$(filter "$(PLATFORM)","gp2x" "opendingux" "rpi1"))
 # very small caches, avoid optimization options making the binary much bigger
 CFLAGS += -fno-common -finline-limit=42 -fno-unroll-loops -ffast-math
 CFLAGS += $(call chkCCflag, -fno-stack-protector)
+CFLAGS += -DBYTE_ORDER=LITTLE_ENDIAN
 ifneq ($(call chkCCflag, -fipa-ra),) # gcc >= 5
 CFLAGS += $(call chkCCflag, -flto -fipa-pta -fipa-ra)
 else
