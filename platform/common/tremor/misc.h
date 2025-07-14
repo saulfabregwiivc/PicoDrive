@@ -41,30 +41,8 @@
 #include <sys/types.h>
 #endif
 
-#if BYTE_ORDER==LITTLE_ENDIAN
-union magic {
-  struct {
-    ogg_int32_t lo;
-    ogg_int32_t hi;
-  } halves;
-  ogg_int64_t whole;
-};
-#endif 
-
-#if BYTE_ORDER==BIG_ENDIAN
-union magic {
-  struct {
-    ogg_int32_t hi;
-    ogg_int32_t lo;
-  } halves;
-  ogg_int64_t whole;
-};
-#endif
-
 STIN ogg_int32_t MULT32(ogg_int32_t x, ogg_int32_t y) {
-  union magic magic;
-  magic.whole = (ogg_int64_t)x * y;
-  return magic.halves.hi;
+  return (ogg_int64_t)x * y >> 32;
 }
 
 STIN ogg_int32_t MULT31(ogg_int32_t x, ogg_int32_t y) {
@@ -72,9 +50,7 @@ STIN ogg_int32_t MULT31(ogg_int32_t x, ogg_int32_t y) {
 }
 
 STIN ogg_int32_t MULT31_SHIFT15(ogg_int32_t x, ogg_int32_t y) {
-  union magic magic;
-  magic.whole  = (ogg_int64_t)x * y;
-  return ((ogg_uint32_t)(magic.halves.lo)>>15) | ((magic.halves.hi)<<17);
+  return (ogg_int64_t)x * y >> 15;
 }
 
 #else
