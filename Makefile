@@ -229,7 +229,7 @@ USE_FRONTEND = 1
 PLATFORM_MP3 ?= 1
 endif
 ifeq "$(PLATFORM)" "psp"
-CFLAGS += -DUSE_BGR565 -G8 # -DLPRINTF_STDIO -DFW15
+CFLAGS += -DUSE_BGR565 -G8 # -DLPRINTF_STDIO -DFW15 -DBYTE_ORDER=LITTLE_ENDIAN
 LDLIBS += -lpspgu -lpspge -lpsppower -lpspaudio -lpspdisplay -lpspaudiocodec
 LDLIBS += -lpspctrl
 platform/common/main.o: CFLAGS += -Dmain=pico_main
@@ -242,7 +242,7 @@ OBJS += platform/psp/mp3.o
 USE_FRONTEND = 1
 endif
 ifeq "$(PLATFORM)" "ps2"
-CFLAGS += -DUSE_BGR555 # -DLOG_TO_FILE
+CFLAGS += -DUSE_BGR555 -DBYTE_ORDER=LITTLE_ENDIAN # -DLOG_TO_FILE
 LDLIBS += -lpatches -lgskit -ldmakit -lps2_drivers
 OBJS += platform/ps2/plat.o
 OBJS += platform/ps2/emu.o
@@ -250,7 +250,7 @@ OBJS += platform/ps2/in_ps2.o
 USE_FRONTEND = 1
 endif
 ifeq "$(PLATFORM)" "win32"
-CFLAGS += -DSDL_OVERLAY_2X -DSDL_BUFFER_3X -DSDL_REDRAW_EVT
+CFLAGS += -DSDL_OVERLAY_2X -DSDL_BUFFER_3X -DSDL_REDRAW_EVT -DBYTE_ORDER=LITTLE_ENDIAN
 OBJS += platform/win32/plat.o
 OBJS += platform/linux/emu.o platform/linux/blit.o # FIXME
 OBJS += platform/common/plat_sdl.o platform/common/inputmap_kbd.o
