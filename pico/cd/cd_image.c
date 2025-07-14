@@ -55,6 +55,7 @@ static int handle_mp3(const char *fname, int index)
   return fs;
 }
 
+extern ov_callbacks ogg_cb;
 static int handle_ogg(const char *fname, int index)
 {
   track_t *track = &cdd.toc.tracks[index];
@@ -66,7 +67,7 @@ static int handle_ogg(const char *fname, int index)
   tmp_file = fopen(fname, "rb");
   if (tmp_file == NULL)
     return -1;
-  if (ov_open(tmp_file, &tmp_ogg, NULL, 0)) {
+  if (ov_open_callbacks(tmp_file, &tmp_ogg, NULL, 0, ogg_cb)) {
     fclose(tmp_file);
     return -1;
   }
@@ -89,7 +90,7 @@ static int handle_ogg(const char *fname, int index)
   tmp_file = (void *) strdup(fname);
 #endif
 
-  track->type = CT_MP3;
+  track->type = CT_OGG;
   track->fd = tmp_file;
   track->offset = 0;
 

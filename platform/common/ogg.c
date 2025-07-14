@@ -18,6 +18,19 @@ static int ogg_current_index;
 static int cdda_out_pos;
 static int decoder_active;
 
+static int ov_fseek(void *f, ogg_int64_t off, int wence)
+{
+	return fseek(f, off, wence);
+}
+
+// need this as ov_clear would close the FILE* otherwise
+ov_callbacks ogg_cb = {
+	(size_t (*)(void *, size_t, size_t, void *))  fread,
+	(int (*)(void *, ogg_int64_t, int))           ov_fseek,
+	(int (*)(void *))                             NULL /*fclose*/,
+	(long (*)(void *))                            ftell
+};
+
 void ogg_start_play(void *f_, int sample_offset)
 {
 	FILE *f = f_;
@@ -27,7 +40,9 @@ void ogg_start_play(void *f_, int sample_offset)
 
 	if (!(PicoIn.opt & POPT_EN_MCD_CDDA) || f == NULL) // cdda disabled or no file?
 		return;
-	if (ov_open(f, &ogg_current_file, NULL, 0))
+
+	fseek(f, 0, SEEK_SET);
+	if (ov_open_callbacks(f, &ogg_current_file, NULL, 0, ogg_cb))
 		return;
 	ogg_current_index = 0;
 
@@ -71,9 +86,16 @@ void ogg_update(s32 *buffer, int length, int stereo)
 			mix_samples(buffer, cdda_out_buffer + cdda_out_pos * 2,
 				left, Pico.snd.cdda_mult);
 
-		ret = ov_read(&ogg_current_file, (char *)cdda_out_buffer, 4*1152,
-				&ogg_current_index);
-		if (ret == 0) {
+		for (length_ogg = 4*1152; length_ogg > 0; ) {
+			ret = ov_read(&ogg_current_file,
+				(char *)cdda_out_buffer + (4*1152 - length_ogg),
+				length_ogg, &ogg_current_index);
+			if (ret > 0)
+				length_ogg -= ret;
+			else
+				break;
+		}
+		if (ret > 0) {
 			mix_samples(buffer + left * sm, cdda_out_buffer,
 				length-left, Pico.snd.cdda_mult);
 			cdda_out_pos = (length-left) * Pico.snd.cdda_mult >> 16;
