@@ -10,7 +10,14 @@
 
 #include <pico/pico_int.h>
 #include <pico/sound/mix.h>
+
+#ifdef USE_TREMOR
 #include "tremor/ivorbisfile.h"
+#define ov_read(vf,b,l,be,w,s,ip) (ov_read)(vf,b,l,ip)
+#else
+#include <vorbis/vorbisfile.h>
+#define ov_time_total(vf,ix) (ov_time_total)(vf,ix)*1000
+#endif
 
 static OggVorbis_File ogg_current_file;
 static int ogg_current_index;
@@ -100,7 +107,7 @@ void ogg_update(s32 *buffer, int length, int stereo)
 		for (length_ogg = 4*1152; length_ogg > 0; ) {
 			ret = ov_read(&ogg_current_file,
 				(char *)cdda_out_buffer + (4*1152 - length_ogg),
-				length_ogg, &ogg_current_index);
+				length_ogg, !CPU_IS_LE,2,1, &ogg_current_index);
 			if (ret > 0)
 				length_ogg -= ret;
 			else

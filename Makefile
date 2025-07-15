@@ -87,7 +87,6 @@ CFLAGS += -DREVISION=\"$(GIT_REVISION)\"
 
 # default settings
 use_libchdr ?= 1
-use_libtremor ?= 1
 ifeq "$(ARCH)" "arm"
 use_cyclone ?= 1
 use_drz80 ?= 1
@@ -331,15 +330,17 @@ OBJS += platform/common/mp3_drmp3.o
 endif
 endif
 
-ifeq (1,$(use_libtremor))
-TREMOR = platform/common/tremor
-OBJS += $(TREMOR)/block.o $(TREMOR)/codebook.o $(TREMOR)/floor0.o $(TREMOR)/floor1.o
-OBJS += $(TREMOR)/info.o $(TREMOR)/mapping0.o $(TREMOR)/mdct.o $(TREMOR)/registry.o
-OBJS += $(TREMOR)/res012.o $(TREMOR)/sharedbook.o $(TREMOR)/synthesis.o $(TREMOR)/window.o
-OBJS += $(TREMOR)/vorbisfile.o $(TREMOR)/framing.o $(TREMOR)/bitwise.o
-CFLAGS += -I$(TREMOR) #-DUSE_LIBTREMOR
-
 OBJS += platform/common/ogg.o
+ifeq "$(PLATFORM_TREMOR)" "1"
+TREMOR = platform/common/tremor
+TREMOR_OBJS += $(TREMOR)/block.o $(TREMOR)/codebook.o $(TREMOR)/floor0.o $(TREMOR)/floor1.o
+TREMOR_OBJS += $(TREMOR)/info.o $(TREMOR)/mapping0.o $(TREMOR)/mdct.o $(TREMOR)/registry.o
+TREMOR_OBJS += $(TREMOR)/res012.o $(TREMOR)/sharedbook.o $(TREMOR)/synthesis.o $(TREMOR)/window.o
+TREMOR_OBJS += $(TREMOR)/vorbisfile.o $(TREMOR)/framing.o $(TREMOR)/bitwise.o
+CFLAGS += -I$(TREMOR) -DUSE_TREMOR
+OBJS += $(TREMOR_OBJS)
+else
+LDLIBS += -lvorbisfile
 endif
 
 ifeq (1,$(use_libchdr))
@@ -380,9 +381,10 @@ endif
 
 ifeq "$(PLATFORM_ZLIB)" "1"
 # zlib
-OBJS += zlib/gzio.o zlib/inffast.o zlib/inflate.o zlib/inftrees.o zlib/trees.o \
+ZLIB_OBJS = zlib/gzio.o zlib/inffast.o zlib/inflate.o zlib/inftrees.o zlib/trees.o \
 	zlib/deflate.o zlib/crc32.o zlib/adler32.o zlib/zutil.o zlib/compress.o zlib/uncompr.o
 CFLAGS += -Izlib
+OBJS += $(ZLIB_OBJS)
 endif
 # unzip
 OBJS += unzip/unzip.o
