@@ -24,6 +24,7 @@ extern void lprintf(const char *fmt, ...);
 extern int  mp3_get_bitrate(void *f, int size);
 extern void mp3_start_play(void *f, int pos);
 extern void mp3_update(s32 *buffer, int length, int stereo);
+extern int ogg_get_length(void *f_);
 extern void ogg_start_play(void *f_, int sample_offset);
 extern void ogg_stop_play(void);
 extern void ogg_update(s32 *buffer, int length, int stereo);

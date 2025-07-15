@@ -10,20 +10,25 @@
 
 #include <pico/pico_int.h>
 #include <pico/sound/mix.h>
-#include "ogg.h"
+
+#ifdef USE_TREMOR
 #include "tremor/ivorbisfile.h"
+#define ov_read(vf,b,l,be,w,s,ip) (ov_read)(vf,b,l,ip)
+#else
+#include <vorbis/vorbisfile.h>
+#define ov_time_total(vf,ix) (ov_time_total)(vf,ix)*1000
+#endif
 
 static OggVorbis_File ogg_current_file;
 static int ogg_current_index;
 static int cdda_out_pos;
 static int decoder_active;
 
+// need this as ov_clear would close the FILE* otherwise
 static int ov_fseek(void *f, ogg_int64_t off, int wence)
 {
 	return fseek(f, off, wence);
 }
-
-// need this as ov_clear would close the FILE* otherwise
 ov_callbacks ogg_cb = {
 	(size_t (*)(void *, size_t, size_t, void *))  fread,
 	(int (*)(void *, ogg_int64_t, int))           ov_fseek,
@@ -31,9 +36,23 @@ ov_callbacks ogg_cb = {
 	(long (*)(void *))                            ftell
 };
 
+int ogg_get_length(void *f_)
+{
+	FILE *f = f_;
+	int fs;
+
+	if (ov_open_callbacks(f, &ogg_current_file, NULL, 0, ogg_cb))
+		return -1;
+
+	fs = ov_time_total(&ogg_current_file, -1);
+	ov_clear(&ogg_current_file);
+	return fs;
+}
+
 void ogg_start_play(void *f_, int sample_offset)
 {
 	FILE *f = f_;
+	int ret;
 
 	cdda_out_pos = 0;
 	decoder_active = 0;
@@ -42,7 +61,8 @@ void ogg_start_play(void *f_, int sample_offset)
 		return;
 
 	fseek(f, 0, SEEK_SET);
-	if (ov_open_callbacks(f, &ogg_current_file, NULL, 0, ogg_cb))
+	ret = ov_open_callbacks(f, &ogg_current_file, NULL, 0, ogg_cb);
+	if (ret)
 		return;
 	ogg_current_index = 0;
 
@@ -89,7 +109,7 @@ void ogg_update(s32 *buffer, int length, int stereo)
 		for (length_ogg = 4*1152; length_ogg > 0; ) {
 			ret = ov_read(&ogg_current_file,
 				(char *)cdda_out_buffer + (4*1152 - length_ogg),
-				length_ogg, &ogg_current_index);
+				length_ogg, !CPU_IS_LE,2,1, &ogg_current_index);
 			if (ret > 0)
 				length_ogg -= ret;
 			else

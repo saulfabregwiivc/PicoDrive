@@ -703,6 +703,8 @@ else
 	LD = $(CC)
 endif
 
+# rely on ogg vorbis in retroarch to avoid version conflicts
+PLATFORM_TREMOR ?= 0
 PLATFORM_ZLIB ?= 1
 
 include Makefile

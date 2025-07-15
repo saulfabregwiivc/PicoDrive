@@ -7,7 +7,6 @@
  */
 
 #include "../pico_int.h"
-#include <platform/common/tremor/ivorbisfile.h>
 #include "genplus_macros.h"
 #include "cdd.h"
 #include "cd_parse.h"
@@ -55,30 +54,21 @@ static int handle_mp3(const char *fname, int index)
   return fs;
 }
 
-extern ov_callbacks ogg_cb;
 static int handle_ogg(const char *fname, int index)
 {
   track_t *track = &cdd.toc.tracks[index];
   FILE *tmp_file;
-  OggVorbis_File tmp_ogg;
-  int kBps;
-  int fs, ret;
+  int fs;
 
   tmp_file = fopen(fname, "rb");
   if (tmp_file == NULL)
     return -1;
-  if (ov_open_callbacks(tmp_file, &tmp_ogg, NULL, 0, ogg_cb)) {
-    fclose(tmp_file);
-    return -1;
-  }
 
-  kBps = ov_bitrate(&tmp_ogg, -1) / 8;
-  fs = ov_time_total(&tmp_ogg, -1);
-  ov_clear(&tmp_ogg);
+  fs = ogg_get_length(tmp_file);
 
-  if (kBps <= 0)
+  if (fs <= 0)
   {
-    elprintf(EL_STATUS, "track %2i: mp3 bitrate %i", index+1, kBps);
+    elprintf(EL_STATUS, "track %2i: mp3 length %i", index+1, fs);
     fclose(tmp_file);
     return -1;
   }
