@@ -68,7 +68,7 @@ static int handle_ogg(const char *fname, int index)
 
   if (fs <= 0)
   {
-    elprintf(EL_STATUS, "track %2i: mp3 length %i", index+1, fs);
+    elprintf(EL_STATUS, "track %2i: ogg length %i", index+1, fs);
     fclose(tmp_file);
     return -1;
   }

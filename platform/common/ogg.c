@@ -26,23 +26,21 @@ static int decoder_active;
 
 // need this as ov_clear would close the FILE* otherwise
 static int ov_fseek(void *f, ogg_int64_t off, int wence)
-{
-	return fseek(f, off, wence);
-}
-ov_callbacks ogg_cb = {
-	(size_t (*)(void *, size_t, size_t, void *))  fread,
-	(int (*)(void *, ogg_int64_t, int))           ov_fseek,
-	(int (*)(void *))                             NULL /*fclose*/,
-	(long (*)(void *))                            ftell
-};
+	{ return fseek(f, off, wence); }
+static size_t ov_fread(void *buf, size_t sz, size_t n, void *f)
+	{ return fread(buf, sz, n, f); }
+static long ov_ftell(void *f)
+	{ return ftell(f); }
+static ov_callbacks ogg_cb = { ov_fread, ov_fseek, NULL /*fclose*/, ov_ftell };
 
 int ogg_get_length(void *f_)
 {
 	FILE *f = f_;
-	int fs;
+	int fs, ret;
 
-	if (ov_open_callbacks(f, &ogg_current_file, NULL, 0, ogg_cb))
-		return -1;
+	ret = ov_open_callbacks(f, &ogg_current_file, NULL, 0, ogg_cb);
+	if (ret < 0)
+		return ret;
 
 	fs = ov_time_total(&ogg_current_file, -1);
 	ov_clear(&ogg_current_file);
