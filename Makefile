@@ -341,6 +341,7 @@ CFLAGS += -I$(TREMOR) -DUSE_TREMOR
 OBJS += $(TREMOR_OBJS)
 else
 LDLIBS += -lvorbisfile
+CFLAGS += -DUSE_SYS_VORBIS
 endif
 
 ifeq (1,$(use_libchdr))

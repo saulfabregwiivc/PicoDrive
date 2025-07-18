@@ -11,10 +11,10 @@
 #include <pico/pico_int.h>
 #include <pico/sound/mix.h>
 
-#ifdef USE_TREMOR
+#if defined(USE_TREMOR)
 #include "tremor/ivorbisfile.h"
 #define ov_read(vf,b,l,be,w,s,ip) (ov_read)(vf,b,l,ip)
-#else
+#elif defined(USE_SYS_VORBIS)
 #include <vorbis/vorbisfile.h>
 #define ov_time_total(vf,ix) (ov_time_total)(vf,ix)*1000
 #endif

@@ -134,7 +134,7 @@ static const unsigned char waveHeader[32] =
 };
 #endif
 
-#ifdef USE_LIBTREMOR
+#if defined(USE_TREMOR) || defined(USE_SYS_VORBIS)
 #ifdef DISABLE_MANY_OGG_OPEN_FILES
 static void ogg_free(int i)
 {
@@ -214,7 +214,7 @@ void cdd_play_audio(int index, int lba)
 
 static void cdd_seek(int index, int lba)
 {
-#ifdef USE_LIBTREMOR
+#if defined(USE_TREMOR) || defined(USE_SYS_VORBIS)
 #ifdef DISABLE_MANY_OGG_OPEN_FILES
   /* close previous track VORBIS file structure to save memory */
   if (is_audio(cdd.index) && cdd.toc.tracks[cdd.index].vf.datasource)
