@@ -269,7 +269,7 @@ else ifeq ($(platform), ngc)
 	CC = $(DEVKITPPC)/bin/powerpc-eabi-gcc$(EXE_EXT)
 	AR = $(DEVKITPPC)/bin/powerpc-eabi-ar$(EXE_EXT)
 	CFLAGS += -DGEKKO -DHW_DOL -mrvl -mcpu=750 -meabi -mhard-float
-	ifeq ($(USE_SHARED_VORBIS), 1)
+	ifneq ($(USE_TREMOR), 1)
 		CFLAGS += -I$(DEVKITPRO)/portlibs/ppc/include
 	endif
 	STATIC_LINKING = 1
@@ -281,7 +281,7 @@ else ifeq ($(platform), wii)
 	CC = $(DEVKITPPC)/bin/powerpc-eabi-gcc$(EXE_EXT)
 	AR = $(DEVKITPPC)/bin/powerpc-eabi-ar$(EXE_EXT)
 	CFLAGS += -DGEKKO -DHW_RVL -mrvl -mcpu=750 -meabi -mhard-float -ffat-lto-objects
-	ifeq ($(USE_SHARED_VORBIS), 1)
+	ifneq ($(USE_TREMOR), 1)
 		CFLAGS += -I$(DEVKITPRO)/portlibs/ppc/include
 	endif
 	STATIC_LINKING = 1
@@ -709,13 +709,17 @@ else
 	LD = $(CC)
 endif
 
-# if using ogg vorbis in retroarch to compile, don't compile ogg tremor
-ifeq ($(USE_SHARED_VORBIS), 1)
-	PLATFORM_TREMOR = 0
+ifeq ($(USE_TREMOR), 1)
+	PLATFORM_TREMOR = 1
 endif
 
-# ogg tremor is used as default in retroarch, through we can compile with libvorbis too
-PLATFORM_TREMOR ?= 1
+# detect if the toolchain contains the vorbis decoder; use internal libtremor
+# only if not, since there might be name clashes if retroarch also uses vorbis
+NO_VORBIS_HEADER := $(shell \
+       echo '#include <vorbis/vorbisfile.h>' | \
+       $(CC) $(CFLAGS) $(CPPFLAGS) -x c - -c -o /dev/null 2>/dev/null && \
+       echo 0 || echo 1)
+PLATFORM_TREMOR ?= $(NO_VORBIS_HEADER)
 PLATFORM_ZLIB ?= 1
 
 include Makefile
