@@ -337,10 +337,12 @@ TREMOR_OBJS += $(TREMOR)/block.o $(TREMOR)/codebook.o $(TREMOR)/floor0.o $(TREMO
 TREMOR_OBJS += $(TREMOR)/info.o $(TREMOR)/mapping0.o $(TREMOR)/mdct.o $(TREMOR)/registry.o
 TREMOR_OBJS += $(TREMOR)/res012.o $(TREMOR)/sharedbook.o $(TREMOR)/synthesis.o $(TREMOR)/window.o
 TREMOR_OBJS += $(TREMOR)/vorbisfile.o $(TREMOR)/framing.o $(TREMOR)/bitwise.o
-CFLAGS += -I$(TREMOR) -DUSE_TREMOR
+$(TREMOR_OBJS) platform/common/ogg.o: CFLAGS += -I$(TREMOR) -DUSE_TREMOR
+# API conflict between libvorbis and libvorbisidec (aka tremor) when compiling for retroarch
+$(TREMOR_OBJS): CFLAGS += $(call chkCCflag, -fvisibility=hidden)
 OBJS += $(TREMOR_OBJS)
 else
-LDLIBS += -lvorbisfile
+LDLIBS += -lvorbisfile -lvorbis -logg
 endif
 
 ifeq (1,$(use_libchdr))
