@@ -1,7 +1,7 @@
 /*
  * PicoDrive
  * (C) notaz, 2006
- * (C) irixxxx, 2020-2023	added SSG-EG and simple output rate interpolation
+ * (C) kub, 2020	added SSG-EG and simple output rate interpolation
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.
@@ -168,22 +168,25 @@
 1:  @ EG_REL
     cmp     r0, #0x200           @ if ( volume >= 0x200 )
     movge   r0, #1024
-    subge   r0, r0, #1
+    subge   r0, #1
     movge   r3, #EG_OFF
     strgeb  r3, [r5,#0x17]       @ state
-    ldrh    r3, [r5,#0x18]       @ tl
-    b       11f
 
 10: @ finish
     ldrb    r2, [r5,#0x30]       @ ssg
-    ldrh    r3, [r5,#0x18]       @ tl
+    ldrb    r3, [r5,#0x17]       @ state
     strh    r0, [r5,#0x1a]       @ volume
-    recalc_volume_ssg r0 r2
+    cmp     r2, #0x0c            @ if ( ssg&0x04 && state > EG_REL )
+    cmpge   r3, #EG_REL+1
+    ldrh    r3, [r5,#0x18]       @ tl
+    rsbge   r0, r0, #0x200       @ volume = (0x200-volume) & MAX_ATT
+    lslge   r0, r0, #22
+    lsrge   r0, r0, #22
 
 11:
+#endif
     add     r0, r0, r3           @ volume += tl
     strh    r0, [r5,#0x34]       @ vol_out
-#endif
 
 0: @ EG_OFF
 .endm
@@ -195,16 +198,16 @@
     ldrb    r2, [r5,#0x17]                @ state
     ldrh    r3, [r5,#0x1a]                @ volume
     tst     r0, #0x08                     @ ssg enabled &&
-    beq     10f
+    beq     9f
     cmp     r2, #EG_REL+1                 @   state > EG_REL &&
     cmpge   r3, #0x200                    @   volume >= 0x200?
-    blt     10f
+    blt     9f
 
     tst     r0, #0x01
     beq     1f
 
     tst     r0, #0x02
-    eorne   r0, r0, r0, lsr #8            @ ssg ^= ssgn ^ 4
+    eorne   r0, r0, lsr #8                @ ssg ^= ssgn ^ 4
     eorne   r0, r0, #0x4
     orrne   r0, r0, #0x400                @ ssgn = 4
     strneh  r0, [r5,#0x30]
@@ -242,21 +245,24 @@
     movgt   r2, #EG_ATT
 8:  strb    r2, [r5,#0x17]                @ state
 9:
-    ldrb    r0, [r5,#0x30]                @ ssg
-    ldrh    r2, [r5,#0x18]                @ tl
-    recalc_volume_ssg r3 r0
-    add     r3, r3, r2                    @ volume += tl
-    strh    r3, [r5,#0x34]                @ vol_out
-10:
 .endm
 
-@ r5=slot
-.macro recalc_volume_ssg vol ssg
-@    and     \ssg, \ssg, #0x0c
-    cmp     \ssg, #0x0c                   @ if (~ssg&0x0c)
-    rsbge   \vol, \vol, #0x200            @ volume = (0x200-volume) & MAX_ATT
-    movge   \vol, \vol, lsl #22
-    movge   \vol, \vol, lsr #22
+@ r5=slot, trashes: r0,r2,r3
+.macro recalc_volout
+    ldrb    r2, [r5,#0x30]                @ ssg
+    ldrb    r3, [r5,#0x17]                @ state
+    ldrh    r0, [r5,#0x1a]                @ volume
+
+@    and     r2, r2, #0x0c
+    cmp     r2, #0x0c                     @ if ( ~ssg&0x0c && state > EG_REL )
+    cmpge   r3, #EG_REL+1
+    ldrh    r3, [r5,#0x18]                @ tl
+    rsbge   r0, r0, #0x200                @ volume = (0x200-volume) & MAX_ATT
+    lslge   r0, r0, #22
+    lsrge   r0, r0, #22
+
+    add     r0, r0, r3                    @ volume += tl
+    strh    r0, [r5,#0x34]                @ vol_out
 .endm
 #endif
 
@@ -693,18 +699,15 @@ ssg_upd_loop:
     @ use lr as a pointer to the slot phases stored in the context
     update_ssg_eg
 #if 0
-    tst     r6, #1
-    addeq   lr, lr, #2*4
-    subne   lr, lr, #4
     subs    r6, r6, #1
-    addeq   lr, lr, #4
+    addne   lr, lr, #4
     addne   r5, r5, #SLOT_STRUCT_SIZE
 #else
-    add     lr, lr, #4
+    add     lr, lr, #4*2
     add     r5, r5, #SLOT_STRUCT_SIZE*2
     update_ssg_eg
     subs    r6, r6, #2
-    addne   lr, lr, #4
+    subne   lr, lr, #4
     subne   r5, r5, #SLOT_STRUCT_SIZE
 #endif
     bne     ssg_upd_loop
@@ -854,13 +857,12 @@ crl_smp_loop_end:
     tst     r0, r0
     beq     ctl_sample_skip
     orr     r4, r4, #8              @ have_output
-    mov     r1, r0, lsr #31         @ clip (saturate) sample to 14 bit
+    lsr     r1, r0, #31             @ clip (saturate) sample to 14 bit
     cmn     r1, r0, asr #13
     subne   r0, r1, #0x80000001
-    movne   r0, r0, asr #18
-    tst     r4, #0x80               @ dac?
-    bicne   r0, r0, #0x1f
+    asrne   r0, r0, #18
     tst     r4, r1, lsl #7          @ (sample < 0) && dac?
+    bicne   r0, r0, #0x1f
     subne   r0, r0, #7<<5
     tst     r12, #1
     beq     ctl_sample_mono

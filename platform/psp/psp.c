@@ -31,6 +31,7 @@ extern int pico_main(int argc, char *argv[]);
 #ifndef FW15
 
 PSP_MODULE_INFO("PicoDrive", 0, 1, 97);
+PSP_HEAP_SIZE_MAX();
 
 int main(int argc, char *argv[]) { return pico_main(argc, argv); }	/* just a wrapper */
 
@@ -65,7 +66,9 @@ int psp_unhandled_suspend = 0;
 
 unsigned int __attribute__((aligned(16))) guCmdList[GU_CMDLIST_SIZE];
 
-void *psp_screen = VRAM_FB0; /* back buffer */
+void *psp_screen = VRAM_FB0;
+
+static int current_screen = 0; /* front bufer */
 
 static SceUID main_thread_id = -1;
 
@@ -143,6 +146,7 @@ void psp_init(void)
 	/* video */
 	sceDisplaySetMode(0, 480, 272);
 	sceDisplaySetFrameBuf(VRAM_FB1, 512, PSP_DISPLAY_PIXEL_FORMAT_565, PSP_DISPLAY_SETBUF_NEXTFRAME);
+	current_screen = 1;
 	psp_screen = VRAM_FB0;
 
 	/* gu */
@@ -152,8 +156,6 @@ void psp_init(void)
 	sceGuDrawBuffer(GU_PSM_5650, (void *)VRAMOFFS_FB0, 512);
 	sceGuDispBuffer(480, 272, (void *)VRAMOFFS_FB1, 512); // don't care
 	sceGuDepthBuffer((void *)VRAMOFFS_DEPTH, 512);
-	sceGuClearColor(0);
-	sceGuClearDepth(0);
 	sceGuClear(GU_COLOR_BUFFER_BIT | GU_DEPTH_BUFFER_BIT);
 	sceGuOffset(2048 - (480 / 2), 2048 - (272 / 2));
 	sceGuViewport(2048, 2048, 480, 272);
@@ -190,17 +192,27 @@ void psp_finish(void)
 	sceKernelExitGame();
 }
 
-void psp_video_flip(int wait_vsync)
+void psp_video_flip(int wait_vsync, int other)
 {
-	if (wait_vsync) sceDisplayWaitVblankStart();
-	sceDisplaySetFrameBuf(psp_screen, 512, PSP_DISPLAY_PIXEL_FORMAT_565,
-		PSP_DISPLAY_SETBUF_IMMEDIATE);
-	psp_screen = (void *)((unsigned long)psp_screen ^ (VRAMOFFS_FB1 ^ VRAMOFFS_FB0));
+	unsigned long fb = (unsigned long)psp_screen & ~0x40000000;
+	if (other) fb ^= 0x44000;
+	//if (wait_vsync) sceDisplayWaitVblankStart();
+	sceDisplaySetFrameBuf((void *)fb, 512, PSP_DISPLAY_PIXEL_FORMAT_565,
+		wait_vsync ? PSP_DISPLAY_SETBUF_NEXTFRAME : PSP_DISPLAY_SETBUF_IMMEDIATE);
+	current_screen ^= 1;
+	psp_screen = current_screen ? VRAM_FB0 : VRAM_FB1;
 }
 
 void *psp_video_get_active_fb(void)
 {
-	return (void *)((unsigned long)psp_screen ^ (VRAMOFFS_FB1 ^ VRAMOFFS_FB0));
+	return current_screen ? VRAM_FB1 : VRAM_FB0;
+}
+
+void psp_video_switch_to_single(void)
+{
+	psp_screen = VRAM_FB0;
+	sceDisplaySetFrameBuf(psp_screen, 512, PSP_DISPLAY_PIXEL_FORMAT_565, PSP_DISPLAY_SETBUF_NEXTFRAME);
+	current_screen = 0;
 }
 
 void psp_msleep(int ms)
@@ -244,14 +256,14 @@ char *psp_get_status_line(void)
 {
 	static char buff[64];
 	int ret, bat_percent, bat_time;
-	ScePspDateTime time;
+	pspTime time;
 
 	ret = sceRtcGetCurrentClockLocalTime(&time);
 	bat_percent = scePowerGetBatteryLifePercent();
 	bat_time = scePowerGetBatteryLifeTime();
 	if (ret < 0 || bat_percent < 0 || bat_time < 0) return NULL;
 
-	snprintf(buff, sizeof(buff), "%02i:%02i  bat: %3i%%", time.hour, time.minute, bat_percent);
+	snprintf(buff, sizeof(buff), "%02i:%02i  bat: %3i%%", time.hour, time.minutes, bat_percent);
 	if (!scePowerIsPowerOnline())
 		snprintf(buff+strlen(buff), sizeof(buff)-strlen(buff), " (%i:%02i)", bat_time/60, bat_time%60);
 	return buff;

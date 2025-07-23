@@ -1,7 +1,7 @@
 /*
  * Basic macros to emit x86 instructions and some utils
  * Copyright (C) 2008,2009,2010 notaz
- * Copyright (C) 2019-2024 irixxxx
+ * Copyright (C) 2019 kub
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.
@@ -455,6 +455,68 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 #define emith_bic_r_imm(r, imm) \
 	emith_arith_r_imm(4, r, ~(imm))
 
+// fake conditionals (using SJMP instead)
+#define emith_move_r_imm_c(cond, r, imm) \
+	emith_move_r_imm(r, imm)
+#define emith_add_r_imm_c(cond, r, imm) \
+	emith_add_r_imm(r, imm)
+#define emith_sub_r_imm_c(cond, r, imm) \
+	emith_sub_r_imm(r, imm)
+#define emith_or_r_imm_c(cond, r, imm) \
+	emith_or_r_imm(r, imm)
+#define emith_eor_r_imm_c(cond, r, imm) \
+	emith_eor_r_imm(r, imm)
+#define emith_eor_r_imm_ptr_c(cond, r, imm) \
+	emith_eor_r_imm_ptr(r, imm)
+#define emith_bic_r_imm_c(cond, r, imm) \
+	emith_bic_r_imm(r, imm)
+#define emith_tst_r_imm_c(cond, r, imm) \
+	emith_tst_r_imm(r, imm)
+#define emith_move_r_r_ptr_c(cond, d, s) \
+	emith_move_r_r_ptr(d, s)
+#define emith_ror_c(cond, d, s, cnt) \
+	emith_ror(d, s, cnt)
+#define emith_and_r_r_c(cond, d, s) \
+	emith_and_r_r(d, s)
+#define emith_add_r_r_imm_c(cond, d, s, imm) \
+	emith_add_r_r_imm(d, s, imm)
+#define emith_sub_r_r_imm_c(cond, d, s, imm) \
+	emith_sub_r_r_imm(d, s, imm)
+
+#define emith_read8_r_r_r_c(cond, r, rs, rm) \
+	emith_read8_r_r_r(r, rs, rm)
+#define emith_read8s_r_r_r_c(cond, r, rs, rm) \
+	emith_read8s_r_r_r(r, rs, rm)
+#define emith_read16_r_r_r_c(cond, r, rs, rm) \
+	emith_read16_r_r_r(r, rs, rm)
+#define emith_read16s_r_r_r_c(cond, r, rs, rm) \
+	emith_read16s_r_r_r(r, rs, rm)
+#define emith_read_r_r_r_c(cond, r, rs, rm) \
+	emith_read_r_r_r(r, rs, rm)
+
+#define emith_read_r_r_offs_c(cond, r, rs, offs) \
+	emith_read_r_r_offs(r, rs, offs)
+#define emith_read_r_r_offs_ptr_c(cond, r, rs, offs) \
+	emith_read_r_r_offs_ptr(r, rs, offs)
+#define emith_write_r_r_offs_c(cond, r, rs, offs) \
+	emith_write_r_r_offs(r, rs, offs)
+#define emith_write_r_r_offs_ptr_c(cond, r, rs, offs) \
+	emith_write_r_r_offs_ptr(r, rs, offs)
+#define emith_read8_r_r_offs_c(cond, r, rs, offs) \
+	emith_read8_r_r_offs(r, rs, offs)
+#define emith_write8_r_r_offs_c(cond, r, rs, offs) \
+	emith_write8_r_r_offs(r, rs, offs)
+#define emith_read16_r_r_offs_c(cond, r, rs, offs) \
+	emith_read16_r_r_offs(r, rs, offs)
+#define emith_write16_r_r_offs_c(cond, r, rs, offs) \
+	emith_write16_r_r_offs(r, rs, offs)
+#define emith_jump_reg_c(cond, r) \
+	emith_jump_reg(r)
+#define emith_jump_ctx_c(cond, offs) \
+	emith_jump_ctx(offs)
+#define emith_ret_c(cond) \
+	emith_ret()
+
 // _r_r_imm - use lea
 #define emith_add_r_r_imm(d, s, imm) do { \
 	if (imm == 0) \
@@ -565,6 +627,11 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 	if (d != s) \
 		emith_move_r_r(d, s); \
 	if (count) emith_and_r_imm(d, t); \
+} while (0)
+
+#define emith_clear_msb_c(cond, d, s, count) do { \
+	(void)(cond); \
+	emith_clear_msb(d, s, count); \
 } while (0)
 
 #define emith_sext(d, s, bits) do { \
@@ -791,6 +858,8 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 
 #define emith_ctx_read(r, offs) \
 	emith_read_r_r_offs(r, CONTEXT_REG, offs)
+#define emith_ctx_read_c(cond, r, offs) \
+	emith_ctx_read(r, offs)
 
 #define emith_ctx_read_ptr(r, offs) do { \
 	EMIT_REX_IF(1, r, CONTEXT_REG); \
@@ -865,12 +934,11 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 
 #define emith_call_reg(r) do { \
 	EMIT_REX_IF(0, 0, r); \
-	EMIT_OP_MODRM64(0xff, 3, 2, r); \
+	EMIT_OP_MODRM(0xff, 3, 2, (r)&7); \
 } while (0)
 
 #define emith_abicall_ctx(offs) do { \
-	EMIT_REX_IF(0, 0, CONTEXT_REG); \
-	EMIT_OP_MODRM64(0xff, 2, 2, CONTEXT_REG); \
+	EMIT_OP_MODRM(0xff, 2, 2, CONTEXT_REG); \
 	EMIT(offs, u32); \
 } while (0)
 
@@ -887,12 +955,11 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 
 #define emith_jump_reg(r) do { \
 	EMIT_REX_IF(0, 0, r); \
-	EMIT_OP_MODRM64(0xff, 3, 4, r); \
+	EMIT_OP_MODRM(0xff, 3, 4, (r)&7); \
 } while (0)
 
 #define emith_jump_ctx(offs) do { \
-	EMIT_REX_IF(0, 0, CONTEXT_REG); \
-	EMIT_OP_MODRM64(0xff, 2, 4, CONTEXT_REG); \
+	EMIT_OP_MODRM(0xff, 2, 4, CONTEXT_REG); \
 	EMIT(offs, u32); \
 } while (0)
 
@@ -911,6 +978,8 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 
 #define emith_abijump_reg(r) \
 	emith_jump_reg(r)
+#define emith_abijump_reg_c(cond, r) \
+	emith_abijump_reg(r)
 #define emith_abicall(target) \
 	emith_call(target)
 #define emith_abicall_cond(cond, target) \
@@ -919,16 +988,16 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 	emith_call_reg(r)
 
 
-#define EMITH_JMP_START(cond) \
-{ 	u8 *cond_ptr; \
+#define EMITH_JMP_START(cond) { \
+	u8 *cond_ptr; \
 	JMP8_POS(cond_ptr)
 
 #define EMITH_JMP_END(cond) \
 	JMP8_EMIT(cond, cond_ptr); \
 }
 
-#define EMITH_JMP3_START(cond) \
-{ 	u8 *cond_ptr, *else_ptr; \
+#define EMITH_JMP3_START(cond) { \
+	u8 *cond_ptr, *else_ptr; \
 	JMP8_POS(cond_ptr)
 
 #define EMITH_JMP3_MID(cond) \
@@ -1140,12 +1209,13 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 } while (0)
 
 #define emith_sh2_rcall(a, tab, func, mask) do { \
-	int scale_ = PTR_SCALE <= 2 ? PTR_SCALE : 2; \
 	emith_lsr(mask, a, SH2_READ_SHIFT); \
-	if (PTR_SCALE > scale_) emith_lsl(mask, mask, PTR_SCALE-scale_); \
 	EMIT_XREX_IF(1, tab, tab, mask); \
 	EMIT_OP_MODRM64(0x8d, 0, tab, 4); \
-	EMIT_SIB64(scale_+1, mask, tab); /* lea tab, [tab + mask*(2*scale)] */ \
+	EMIT_SIB64(PTR_SCALE, mask, tab); /* lea tab, [tab + mask * {4,8}] */ \
+	EMIT_XREX_IF(1, tab, tab, mask); \
+	EMIT_OP_MODRM64(0x8d, 0, tab, 4); \
+	EMIT_SIB64(PTR_SCALE, mask, tab); /* lea tab, [tab + mask * {4,8}] */ \
 	EMIT_REX_IF(1, func,  tab); \
 	emith_deref_modrm(0x8b, 0, func, tab); /* mov func, [tab] */ \
 	EMIT_REX_IF(0, mask, tab); \
@@ -1199,11 +1269,10 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 	if (t3 == xAX) { t3 = t1; t1 = xAX; } /* for MUL */	\
 	if (t3 == xDX) { t3 = t2; t2 = xDX; }			\
 	/* if (sr < 0) return */				\
-	emith_cmp_r_imm(sr, 0);					\
+	emith_asrf(t2, sr, 12);					\
 	EMITH_JMP_START(DCOND_LE);				\
 	/* turns = sr.cycles / cycles */			\
-	emith_asr(t2, sr, 12);					\
-	emith_move_r_imm(t3, (u32)((1ULL<<32) / (cycles)));	\
+	emith_move_r_imm(t3, (u32)((1ULL<<32) / (cycles)) + 1);	\
 	emith_mul_u64(t1, t2, t2, t3); /* multiply by 1/x */	\
 	rcache_free_tmp(t3);					\
 	if (reg >= 0) {						\
@@ -1211,12 +1280,12 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 		t3 = rcache_get_reg(reg, RC_GR_RMW, NULL);	\
 		emith_cmp_r_r(t3, t2);				\
 		EMITH_SJMP_START(DCOND_HI);			\
-		emith_sub_r_r_imm(t2, t3, 1);	                \
+		emith_sub_r_r_imm_c(DCOND_LS, t2, t3, 1);	\
 		EMITH_SJMP_END(DCOND_HI);			\
 		/* if (reg <= 1) turns = 0 */			\
 		emith_cmp_r_imm(t3, 1);				\
 		EMITH_SJMP_START(DCOND_HI);			\
-		emith_move_r_imm(t2, 0);		        \
+		emith_move_r_imm_c(DCOND_LS, t2, 0);		\
 		EMITH_SJMP_END(DCOND_HI);			\
 		/* reg -= turns */				\
 		emith_sub_r_r(t3, t2);				\
@@ -1293,17 +1362,16 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 	emith_tst_r_imm(sr, S);                   \
 	EMITH_SJMP_START(DCOND_EQ);               \
 	/* overflow if top 17 bits of MACH aren't all 1 or 0 */ \
-	/* to check: add MACH >> 31 to MACH >> 15. this is 0 if no overflow */ \
-	emith_asr(rn, mh, 15);                    \
-	emith_lsr(rm, mh, 31);                    \
-	emith_addf_r_r(rn, rm);                   \
-	EMITH_SJMP_START(DCOND_EQ); /* sum != 0 -> -ovl */ \
-	emith_move_r_imm(ml, 0x00000000);         \
-	emith_move_r_imm(mh, 0x00008000);         \
-	EMITH_SJMP_START(DCOND_MI); /* sum < 0 -> -ovl */ \
-	emith_sub_r_imm(ml, 1); /* 0xffffffff */  \
-	emith_sub_r_imm(mh, 1); /* 0x00007fff */  \
-	EMITH_SJMP_END(DCOND_MI);                 \
+	/* to check: add MACH[15] to MACH[31:16]. this is 0 if no overflow */ \
+	emith_asrf(rn, mh, 16); /* sum = (MACH>>16) + ((MACH>>15)&1) */ \
+	emith_adcf_r_imm(rn, 0); /* (MACH>>15) is in carry after shift */ \
+	EMITH_SJMP_START(DCOND_EQ); /* sum != 0 -> ov */ \
+	emith_move_r_imm_c(DCOND_NE, ml, 0x0000); /* -overflow */ \
+	emith_move_r_imm_c(DCOND_NE, mh, 0x8000); \
+	EMITH_SJMP_START(DCOND_LE); /* sum > 0 -> +ovl */ \
+	emith_sub_r_imm_c(DCOND_GT, ml, 1); /* 0xffffffff */ \
+	emith_sub_r_imm_c(DCOND_GT, mh, 1); /* 0x00007fff */ \
+	EMITH_SJMP_END(DCOND_LE);                 \
 	EMITH_SJMP_END(DCOND_EQ);                 \
 	EMITH_SJMP_END(DCOND_EQ);                 \
 } while (0)
@@ -1324,11 +1392,11 @@ enum { xAX = 0, xCX, xDX, xBX, xSP, xBP, xSI, xDI,	// x86-64,i386 common
 	emith_addf_r_r(rn, mh); /* sum = MACH + ((MACL>>31)&1) */ \
 	EMITH_SJMP_START(DCOND_EQ); /* sum != 0 -> overflow */ \
 	/* XXX: LSB signalling only in SH1, or in SH2 too? */ \
-	emith_move_r_imm(mh, 0x00000001); /* LSB of MACH */ \
-	emith_move_r_imm(ml, 0x80000000); /* -overflow */ \
-	EMITH_SJMP_START(DCOND_MI); /* sum > 0 -> +overflow */ \
-	emith_sub_r_imm(ml, 1); /* 0x7fffffff */  \
-	EMITH_SJMP_END(DCOND_MI);                 \
+	emith_move_r_imm_c(DCOND_NE, mh, 0x00000001); /* LSB of MACH */ \
+	emith_move_r_imm_c(DCOND_NE, ml, 0x80000000); /* negative ovrfl */ \
+	EMITH_SJMP_START(DCOND_LE); /* sum > 0 -> positive ovrfl */ \
+	emith_sub_r_imm_c(DCOND_GT, ml, 1); /* 0x7fffffff */ \
+	EMITH_SJMP_END(DCOND_LE);                 \
 	EMITH_SJMP_END(DCOND_EQ);                 \
 	EMITH_SJMP_END(DCOND_EQ);                 \
 } while (0)
@@ -1351,7 +1419,7 @@ static void emith_clr_t_cond(int sr)
 static void emith_set_t_cond(int sr, int cond)
 {
   EMITH_SJMP_START(emith_invert_cond(cond));
-  emith_or_r_imm(sr, T);
+  emith_or_r_imm_c(cond, sr, T);
   EMITH_SJMP_END(emith_invert_cond(cond));
 }
 

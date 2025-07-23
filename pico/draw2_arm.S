@@ -1,7 +1,6 @@
 /*
  * assembly optimized versions of most funtions from draw2.c
  * (C) notaz, 2006-2008
- * (C) irixxxx, 2019-2023
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.
@@ -429,7 +428,6 @@ DrawLayerFull:
     ldr     r11, [r11, #OFS_EST_Draw2FB]
     sub     r4, r9, r4, lsl #24
     tst     r7, #PDRAW_BORDER_32  @ H32 border mode?
-    tstne   r7, #PDRAW_32_COLS
     addne   r11, r11, #32
     mov     r4, r4, asr #24
     mov     r7, #328*8
@@ -611,7 +609,6 @@ DrawTilesFromCacheF:
     ldr     r11,[r1, #OFS_EST_Draw2Start]
     ldr     r2, [r0], #4    @ read y offset
     tst     r7, #PDRAW_BORDER_32 @ H32 border mode?
-    tstne   r7, #PDRAW_32_COLS
     addne   r4, r4, #32
     mov     r7, #328
     mla     r2, r7, r2, r4
@@ -720,7 +717,6 @@ DrawWindowFull:
     and     r12, r12, #0xf800
     mov     r5, r5, lsl #6        @ nametab_step
     tst     r7, #PDRAW_BORDER_32
-    tstne   r7, #PDRAW_32_COLS
     addne   r11, r11, #32         @ center screen in H32 mode
 
 0:  and     r4, r0, #0xff
@@ -949,7 +945,6 @@ DrawSpriteFull:
     ldr     r2, [r1,  #OFS_EST_Draw2Start]
     ldr     r10, [r1, #OFS_EST_PicoMem_vram]
     tst     r0, #PDRAW_BORDER_32  @ H32 border mode?
-    tstne   r0, #PDRAW_32_COLS
     addne   r11, r11, #32
     sub     r12, r12, r2, lsl #3
     mov     r0, #328

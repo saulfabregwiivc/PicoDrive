@@ -1,8 +1,6 @@
 /*
- * PicoDrive input driver for PSP
- *
  * (C) Gražvydas "notaz" Ignotas, 2006-2012
- * (C) irixxxx 2020
+ * (C) kub 2020
  *
  * This work is licensed under the terms of any of these licenses
  * (at your option):
@@ -229,6 +227,6 @@ void in_psp_init(struct in_default_bind *defbinds)
 	in_psp_keys[lg2(PSP_NUB_DOWN)] = "Analog down";
 	in_psp_keys[lg2(PSP_NUB_RIGHT)] = "Analog right";
 
-	in_register_driver(&in_psp_drv, defbinds, NULL, NULL);
+	in_register_driver(&in_psp_drv, defbinds, NULL);
 }
 

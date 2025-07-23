@@ -1,7 +1,7 @@
 /*
  * some code for sample mixing
  * (C) notaz, 2006,2007
- * (C) irixxxx, 2019,2020		added filtering
+ * (C) kub, 2019,2020		added filtering
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.
@@ -18,7 +18,7 @@
 	val -= val >> 3; /* reduce level to avoid clipping */	\
 	if ((s16)val != val) val = (val < 0 ? MINOUT : MAXOUT)
 
-int mix_32_to_16_level;
+int mix_32_to_16l_level;
 
 static struct iir {
 	int	alpha;		// alpha for EMA low pass
@@ -36,22 +36,22 @@ static struct iir {
 
 
 // exponential moving average combined DC filter and lowpass filter
-// y0[n] = y0[n-1]+(x[n]-y0[n-1])*alpha, y1[n] = y[n-1]+(y0[n]-y1[n-1])*(1/512)
+// y0[n] = (x[n]-y0[n-1])*alpha+y0[n-1], y1[n] = (y0[n] - y1[n-1])*(1-1/8192)
 static inline int filter_band(struct iir *fi2, int x)
 {
 	// low pass. alpha is Q8 to avoid loss by 32 bit overflow.
 //	fi2->y[0] += ((x<<(QB-8)) - (fi2->y[0]>>8)) * fi2->alpha;
 	fi2->y[0] += (x - (fi2->y[0]>>QB)) * fi2->alpha;
-	// DC filter. for alpha=1/8192 cutoff ~1HZ, for 1/512 ~14Hz
-	fi2->y[1] += (fi2->y[0] - fi2->y[1]) >> 9;
+	// DC filter. for alpha=1-1/8192 cutoff ~1HZ, for 1-1/1024 ~7Hz
+	fi2->y[1] += (fi2->y[0] - fi2->y[1]) >> QB;
 	return (fi2->y[0] - fi2->y[1]) >> QB;
 }
 
 // exponential moving average filter for DC filtering
-// y[n]= y[n-1] + (x[n]-y[n-1])*(1/512) (corner approx. 14Hz, gain 1)
+// y[n] = (x[n]-y[n-1])*(1-1/8192) (corner approx. 1Hz, gain 1)
 static inline int filter_exp(struct iir *fi2, int x)
 {
-	fi2->y[1] += ((x << QB) - fi2->y[1]) >> 9;
+	fi2->y[1] += ((x << QB) - fi2->y[1]) >> QB;
 	return x - (fi2->y[1] >> QB);
 }
 
@@ -63,34 +63,33 @@ static inline int filter_null(struct iir *fi2, int x)
 
 #define filter	filter_band
 
-#define mix_32_to_16_stereo_core(dest, src, count, lv, fl) {	\
+#define mix_32_to_16l_stereo_core(dest, src, count, lv, fl) {	\
 	int l, r;						\
 	struct iir lf = lfi2, rf = rfi2;			\
 								\
 	for (; count > 0; count--)				\
 	{							\
-		l = *dest;					\
+		l = r = *dest;					\
 		l += *src++ >> lv;				\
-		l = fl(&lf, l);					\
-		Limit16(l);					\
-		*dest++ = l;					\
-		r = *dest;					\
 		r += *src++ >> lv;				\
+		l = fl(&lf, l);					\
 		r = fl(&rf, r);					\
+		Limit16(l);					\
 		Limit16(r);					\
+		*dest++ = l;					\
 		*dest++ = r;					\
 	}							\
 	lfi2 = lf, rfi2 = rf;					\
 }
 
-void mix_32_to_16_stereo_lvl(s16 *dest, s32 *src, int count)
+void mix_32_to_16l_stereo_lvl(s16 *dest, s32 *src, int count)
 {
-	mix_32_to_16_stereo_core(dest, src, count, mix_32_to_16_level, filter);
+	mix_32_to_16l_stereo_core(dest, src, count, mix_32_to_16l_level, filter);
 }
 
-void mix_32_to_16_stereo(s16 *dest, s32 *src, int count)
+void mix_32_to_16l_stereo(s16 *dest, s32 *src, int count)
 {
-	mix_32_to_16_stereo_core(dest, src, count, 0, filter);
+	mix_32_to_16l_stereo_core(dest, src, count, 0, filter);
 }
 
 void mix_32_to_16_mono(s16 *dest, s32 *src, int count)
@@ -114,7 +113,7 @@ void mix_16h_to_32(s32 *dest_buf, s16 *mp3_buf, int count)
 {
 	while (count--)
 	{
-		*dest_buf++ += (*mp3_buf++ * 5) >> 3;
+		*dest_buf++ += *mp3_buf++ >> 1;
 	}
 }
 
@@ -123,8 +122,8 @@ void mix_16h_to_32_s1(s32 *dest_buf, s16 *mp3_buf, int count)
 	count >>= 1;
 	while (count--)
 	{
-		*dest_buf++ += (*mp3_buf++ * 5) >> 3;
-		*dest_buf++ += (*mp3_buf++ * 5) >> 3;
+		*dest_buf++ += *mp3_buf++ >> 1;
+		*dest_buf++ += *mp3_buf++ >> 1;
 		mp3_buf += 1*2;
 	}
 }
@@ -134,8 +133,8 @@ void mix_16h_to_32_s2(s32 *dest_buf, s16 *mp3_buf, int count)
 	count >>= 1;
 	while (count--)
 	{
-		*dest_buf++ += (*mp3_buf++ * 5) >> 3;
-		*dest_buf++ += (*mp3_buf++ * 5) >> 3;
+		*dest_buf++ += *mp3_buf++ >> 1;
+		*dest_buf++ += *mp3_buf++ >> 1;
 		mp3_buf += 3*2;
 	}
 }
@@ -146,8 +145,8 @@ void mix_16h_to_32_resample_stereo(s32 *dest_buf, s16 *cdda_buf, int count, int 
 	int pos16 = 0;
 	while (count--) {
 		int pos = 2 * (pos16>>16);
-		*dest_buf++ += (cdda_buf[pos  ] * 5) >> 3;
-		*dest_buf++ += (cdda_buf[pos+1] * 5) >> 3;
+		*dest_buf++ += cdda_buf[pos  ] >> 1;
+		*dest_buf++ += cdda_buf[pos+1] >> 1;
 		pos16 += fac16;
 	}
 }
@@ -158,8 +157,8 @@ void mix_16h_to_32_resample_mono(s32 *dest_buf, s16 *cdda_buf, int count, int fa
 	int pos16 = 0;
 	while (count--) {
 		int pos = 2 * (pos16>>16);
-		*dest_buf   += (cdda_buf[pos  ] * 5) >> 4;
-		*dest_buf++ += (cdda_buf[pos+1] * 5) >> 4;
+		*dest_buf   += cdda_buf[pos  ] >> 2;
+		*dest_buf++ += cdda_buf[pos+1] >> 2;
 		pos16 += fac16;
 	}
 }

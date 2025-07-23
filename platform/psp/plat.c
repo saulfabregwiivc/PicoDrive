@@ -1,15 +1,12 @@
 /*
  * Platform interface functions for PSP picodrive frontend
  *
- * (C) 2020 irixxxx
+ * (C) 2020 kub
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
-#include <malloc.h>
-#include <errno.h>
-#include <unistd.h>
 
 #include "../common/emu.h"
 #include "../libpicofe/menu.h"
@@ -70,25 +67,9 @@ void plat_target_finish(void)
 /* display a completed frame buffer and prepare a new render buffer */
 void plat_video_flip(void)
 {
-	unsigned long offs;
-
 	g_menubg_src_ptr = psp_screen;
-
-	sceGuSync(0, 0); // sync with prev
-	psp_video_flip(currentConfig.EmuOpt & EOPT_VSYNC);
-	offs = (unsigned long)psp_screen - VRAM_ADDR; // back buffer offset
-
-	sceGuStart(GU_DIRECT, guCmdList);
-	sceGuDrawBuffer(GU_PSM_5650, (void *)offs, 512);
-	sceGuClearColor(0);
-	sceGuClearDepth(0);
-	sceGuClear(GU_COLOR_BUFFER_BIT | GU_DEPTH_BUFFER_BIT);
-
-	blitscreen_clut();
-
-	sceGuFinish();
-
-	g_screen_ptr = VRAM_CACHED_STUFF + offs;
+	psp_video_flip(currentConfig.EmuOpt & EOPT_VSYNC, 1);
+	g_screen_ptr = VRAM_CACHED_STUFF + (psp_screen - VRAM_FB0);
 	plat_video_set_buffer(g_screen_ptr);
 }
 
@@ -96,12 +77,6 @@ void plat_video_flip(void)
 void plat_video_wait_vsync(void)
 {
 	sceDisplayWaitVblankStart();
-}
-
-/* update surface data */
-void plat_video_menu_update(void)
-{
-	// surface is always the screen
 }
 
 /* switch from emulation display to menu display */
@@ -118,35 +93,13 @@ void plat_video_menu_begin(void)
 /* display a completed menu screen */
 void plat_video_menu_end(void)
 {
-	g_menuscreen_ptr = NULL;
-	psp_video_flip(1);
+	plat_video_wait_vsync();
+	psp_video_flip(0, 0);
 }
 
 /* terminate menu display */
 void plat_video_menu_leave(void)
 {
-	g_screen_ptr = VRAM_CACHED_STUFF + (psp_screen - VRAM_FB0);
-	plat_video_set_buffer(g_screen_ptr);
-}
-
-void plat_show_cursor(int on)
-{
-}
-
-int plat_grab_cursor(int on)
-{
-	return 0;
-}
-
-int plat_has_wm(void)
-{
-	return 0;
-}
-
-/* check arg at index x */
-int plat_parse_arg(int argc, char *argv[], int *x)
-{
-	return 1;
 }
 
 /* Preliminary initialization needed at program start */
@@ -184,38 +137,42 @@ int plat_get_data_dir(char *dst, int len)
 /* check if path is a directory */
 int plat_is_dir(const char *path)
 {
-	DIR *dir;
-	if ((dir = opendir(path))) {
-		closedir(dir);
-		return 1;
-	}
-	return 0;
+	SceIoStat st;
+	int ret = sceIoGetstat(path, &st);
+	return (ret >= 0 && (st.st_mode & FIO_S_IFDIR));
 }
 
 /* current time in ms */
 unsigned int plat_get_ticks_ms(void)
 {
-	return clock() / 1000;
+	/* approximate /= 1000 */
+	unsigned long long v64;
+	v64 = (unsigned long long)plat_get_ticks_us() * 4294968;
+	return v64 >> 32;
 }
 
 /* current time in us */
 unsigned int plat_get_ticks_us(void)
 {
-	return clock();
+	return sceKernelGetSystemTimeLow();
 }
 
 /* sleep for some time in ms */
 void plat_sleep_ms(int ms)
 {
-	usleep(ms * 1000);
+	psp_msleep(ms);
 }
 
 /* sleep for some time in us */
 void plat_wait_till_us(unsigned int us_to)
 {
-	unsigned int ticks = clock();
-	if (us_to > ticks)
-		usleep(us_to - ticks);
+	unsigned int tval;
+	int diff;
+
+	tval = sceKernelGetSystemTimeLow();
+	diff = (int)us_to - (int)tval;
+	if (diff >= 512 && diff < 100*1024)
+		sceKernelDelayThread(diff);
 }
 
 /* wait until some event occurs, or timeout */
@@ -271,7 +228,6 @@ static int plat_bat_capacity_get(void)
 	return scePowerGetBatteryLifePercent();
 }
 
-static int sound_rates[] = { 11025, 22050, 44100, -1 };
 struct plat_target plat_target = {
 	.cpu_clock_get = plat_cpu_clock_get,
 	.cpu_clock_set = plat_cpu_clock_set,
@@ -279,8 +235,100 @@ struct plat_target plat_target = {
 //	.gamma_set = plat_gamma_set,
 //	.hwfilter_set = plat_hwfilter_set,
 //	.hwfilters = plat_hwfilters,
-	.sound_rates = sound_rates,
 };
+
+#ifndef DT_DIR
+/* replacement libc stuff */
+
+int alphasort(const struct dirent **a, const struct dirent **b)
+{
+	return strcoll ((*a)->d_name, (*b)->d_name);
+}
+
+int scandir(const char *dir, struct dirent ***namelist_out,
+		int(*filter)(const struct dirent *),
+		int(*compar)(const struct dirent **, const struct dirent **))
+{
+	int ret = -1, dir_uid = -1, name_alloc = 4, name_count = 0;
+	struct dirent **namelist = NULL, *ent;
+	SceIoDirent sce_ent;
+
+	namelist = malloc(sizeof(*namelist) * name_alloc);
+	if (namelist == NULL) { lprintf("%s:%i: OOM\n", __FILE__, __LINE__); goto fail; }
+
+	// try to read first..
+	dir_uid = sceIoDopen(dir);
+	if (dir_uid >= 0)
+	{
+		/* it is very important to clear SceIoDirent to be passed to sceIoDread(), */
+		/* or else it may crash, probably misinterpreting something in it. */
+		memset(&sce_ent, 0, sizeof(sce_ent));
+		ret = sceIoDread(dir_uid, &sce_ent);
+		if (ret < 0)
+		{
+			lprintf("sceIoDread(\"%s\") failed with %i\n", dir, ret);
+			goto fail;
+		}
+	}
+	else
+		lprintf("sceIoDopen(\"%s\") failed with %i\n", dir, dir_uid);
+
+	while (ret > 0)
+	{
+		ent = malloc(sizeof(*ent));
+		if (ent == NULL) { lprintf("%s:%i: OOM\n", __FILE__, __LINE__); goto fail; }
+		ent->d_stat = sce_ent.d_stat;
+		ent->d_stat.st_attr &= FIO_SO_IFMT; // serves as d_type
+		strncpy(ent->d_name, sce_ent.d_name, sizeof(ent->d_name));
+		ent->d_name[sizeof(ent->d_name)-1] = 0;
+		if (filter == NULL || filter(ent))
+		     namelist[name_count++] = ent;
+		else free(ent);
+
+		if (name_count >= name_alloc)
+		{
+			void *tmp;
+			name_alloc *= 2;
+			tmp = realloc(namelist, sizeof(*namelist) * name_alloc);
+			if (tmp == NULL) { lprintf("%s:%i: OOM\n", __FILE__, __LINE__); goto fail; }
+			namelist = tmp;
+		}
+
+		memset(&sce_ent, 0, sizeof(sce_ent));
+		ret = sceIoDread(dir_uid, &sce_ent);
+	}
+
+	// sort
+	if (compar != NULL && name_count > 3)
+		qsort(&namelist[2], name_count - 2, sizeof(namelist[0]), (int (*)()) compar);
+
+	// all done.
+	ret = name_count;
+	*namelist_out = namelist;
+	goto end;
+
+fail:
+	if (namelist != NULL)
+	{
+		while (name_count--)
+			free(namelist[name_count]);
+		free(namelist);
+	}
+end:
+	if (dir_uid >= 0) sceIoDclose(dir_uid);
+	return ret;
+}
+
+/* stubs for libflac (embedded in libchdr) */
+#include <utime.h>
+#include <malloc.h>
+
+int chown(const char *pathname, uid_t owner, gid_t group) { return -1; }
+int chmod(const char *pathname, mode_t mode) { return -1; }
+int utime(const char *filename, const struct utimbuf *times) { return -1; }
+int posix_memalign(void **memptr, size_t alignment, size_t size)
+	{ *memptr = memalign(alignment, size); return 0; }
+#endif
 
 int _flush_cache (char *addr, const int size, const int op)
 {
@@ -288,11 +336,4 @@ int _flush_cache (char *addr, const int size, const int op)
 	sceKernelDcacheWritebackRange(addr, size);
 	sceKernelIcacheInvalidateRange(addr, size);
 	return 0;
-}
-
-int posix_memalign(void **p, size_t align, size_t size)
-{
-	if (p)
-		*p = memalign(align, size);
-	return (p ? *p ? 0 : ENOMEM : EINVAL);
 }

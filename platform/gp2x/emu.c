@@ -1,6 +1,5 @@
 /*
  * (c) Copyright 2006-2010 notaz, All rights reserved.
- * (c) Copyright 2019-2024 irixxxx
  *
  * For performance reasons 3 renderers are exported for both MD and 32x modes:
  * - 16bpp line renderer
@@ -24,7 +23,6 @@
 #include "../common/menu_pico.h"
 #include "../common/arm_utils.h"
 #include "../common/emu.h"
-#include "../common/keyboard.h"
 #include "../common/config_file.h"
 #include "../common/version.h"
 #include "plat.h"
@@ -47,10 +45,6 @@ static int osd_fps_x, osd_y, doing_bg_frame;
 const char *renderer_names[] = { "16bit accurate", " 8bit accurate", " 8bit fast", NULL };
 const char *renderer_names32x[] = { "accurate", "faster", "fastest", NULL };
 enum renderer_types { RT_16BIT, RT_8BIT_ACC, RT_8BIT_FAST, RT_COUNT };
-
-static int is_1stblanked;
-static int firstline, linecount;
-static int firstcol, colcount;
 
 static int (*emu_scan_begin)(unsigned int num) = NULL;
 static int (*emu_scan_end)(unsigned int num) = NULL;
@@ -196,38 +190,29 @@ static void draw_cd_leds(void)
 
 static void draw_pico_ptr(void)
 {
-	int up = (PicoPicohw.pen_pos[0]|PicoPicohw.pen_pos[1]) & 0x8000;
-	int x, y, pitch = 320, offs;
-	// storyware pages are actually squished, 2:1
-	int h = (pico_inp_mode == 1 ? 160 : linecount);
-	if (h < 224) y++;
+	unsigned short *p = (unsigned short *)g_screen_ptr;
+	int x, y, pitch = 320;
 
-	x = ((pico_pen_x * colcount  * ((1ULL<<32)/320 + 1)) >> 32) + firstcol;
-	y = ((pico_pen_y * h         * ((1ULL<<32)/224 + 1)) >> 32) + firstline;
+	// only if pen enabled and for 16bit modes
+	if (pico_inp_mode == 0 || !is_16bit_mode())
+		return;
+
+	x = pico_pen_x + PICO_PEN_ADJUST_X;
+	y = pico_pen_y + PICO_PEN_ADJUST_Y;
+	if (!(Pico.video.reg[12]&1) && !(PicoIn.opt & POPT_DIS_32C_BORDER))
+		x += 32;
 
 	if (currentConfig.EmuOpt & EOPT_WIZ_TEAR_FIX) {
 		pitch = 240;
-		offs = (319 - x) * pitch + y;
+		p += (319 - x) * pitch + y;
 	} else
-		offs = x + y * pitch;
+		p += x + y * pitch;
 
-	if (is_16bit_mode()) {
-		unsigned short *p = (unsigned short *)g_screen_ptr + offs;
-		int o = (up ? 0x0000 : 0xffff), _ = (up ? 0xffff : 0x0000);
-
-		p[-pitch-1] ^= o; p[-pitch] ^= _; p[-pitch+1] ^= _; p[-pitch+2] ^= o;
-		p[-1]       ^= _; p[0]      ^= o; p[1]        ^= o; p[2]        ^= _;
-		p[pitch-1]  ^= _; p[pitch]  ^= o; p[pitch+1]  ^= o; p[pitch+2]  ^= _;
-		p[2*pitch-1]^= o; p[2*pitch]^= _; p[2*pitch+1]^= _; p[2*pitch+2]^= o;
-	} else {
-		unsigned char *p = (unsigned char *)g_screen_ptr + offs;
-		int o = (up ? 0xe0 : 0xf0), _ = (up ? 0xf0 : 0xe0);
-
-		p[-pitch-1] = o; p[-pitch] = _; p[-pitch+1] = _; p[-pitch+2] = o;
-		p[-1]       = _; p[0]      = o; p[1]        = o; p[2]        = _;
-		p[pitch-1]  = _; p[pitch]  = o; p[pitch+1]  = o; p[pitch+2]  = _;
-		p[2*pitch-1]= o; p[2*pitch]= _; p[2*pitch+1]= _; p[2*pitch+2]= o;
-	}
+	p[0]       ^= 0xffff;
+	p[pitch-1] ^= 0xffff;
+	p[pitch]   ^= 0xffff;
+	p[pitch+1] ^= 0xffff;
+	p[pitch*2] ^= 0xffff;
 }
 
 static void clear_1st_column(int firstcol, int firstline, int linecount)
@@ -376,16 +361,12 @@ static int make_local_pal_sms(int fast_mode)
 		// SMS palette for TMS modes
 		0x0000, 0x0000, 0x00a0, 0x00f0, 0x0500, 0x0f00, 0x0005, 0x0ff0,
 		0x000a, 0x000f, 0x0055, 0x00ff, 0x0050, 0x0f0f, 0x0555, 0x0fff,
-		// TMS palette
-		0x0000, 0x0000, 0x04c2, 0x07d6, 0x0e55, 0x0f77, 0x055c, 0x0ee4,
-		0x055f, 0x077f, 0x05bc, 0x08ce, 0x03a2, 0x0b5c, 0x0ccc, 0x0fff,
 	};
 	int i;
 	
 	if (!(Pico.video.reg[0] & 0x4)) {
 		for (i = Pico.est.SonicPalCount; i >= 0; i--) {
-			int sg = !!(PicoIn.AHW & (PAHW_SG|PAHW_SC));
-			bgr444_to_rgb32(localPal+i*0x40, tmspal+sg*0x10, 32);
+			bgr444_to_rgb32(localPal+i*0x40, tmspal, 32);
 			memcpy(localPal+i*0x40+0x20, localPal+i*0x40, 0x20*4);
 		}
 	} else if (fast_mode) {
@@ -403,6 +384,10 @@ static int make_local_pal_sms(int fast_mode)
 		Pico.m.dirtyPal = 0;
 	return (Pico.est.SonicPalCount+1)*0x40;
 }
+
+static int is_1stblanked;
+static int firstline, linecount;
+static int firstcol, colcount;
 
 void pemu_finalize_frame(const char *fps, const char *notice)
 {
@@ -441,18 +426,8 @@ void pemu_finalize_frame(const char *fps, const char *notice)
 		osd_text(osd_fps_x, osd_y, fps);
 	if ((PicoIn.AHW & PAHW_MCD) && (emu_opt & EOPT_EN_CD_LEDS))
 		draw_cd_leds();
-	if (PicoIn.AHW & PAHW_PICO) {
-		int h = linecount, w = colcount;
-		u16 *pd = g_screen_ptr + firstline*g_screen_ppitch + firstcol;
-
-		if (pico_inp_mode && is_16bit_mode())
-			emu_pico_overlay(pd, w, h, g_screen_ppitch);
-		if (pico_inp_mode /*== 2 || overlay*/)
-			draw_pico_ptr();
-	}
-	// draw virtual keyboard on display
-	if (kbd_mode && currentConfig.keyboard == 1 && vkbd)
-		vkbd_draw(vkbd);
+	if (PicoIn.AHW & PAHW_PICO)
+		draw_pico_ptr();
 }
 
 void plat_video_flip(void)
@@ -546,10 +521,6 @@ void plat_status_msg_busy_next(const char *msg)
 void plat_status_msg_busy_first(const char *msg)
 {
 	plat_status_msg_busy_next(msg);
-}
-
-void plat_status_msg_busy_done(void)
-{
 }
 
 static void vid_reset_mode(void)
@@ -699,14 +670,6 @@ void emu_video_mode_change(int start_line, int line_count, int start_col, int co
 		gp2x_memset_all_buffers(0, 0, 320*240*2);
 }
 
-void plat_video_clear_buffers(void)
-{
-	if (!is_16bit_mode())
-		gp2x_memset_all_buffers(0, 0xe0, 320*240);
-	else
-		gp2x_memset_all_buffers(0, 0, 320*240*2);
-}
-
 void plat_video_toggle_renderer(int change, int is_menu_call)
 {
 	change_renderer(change);
@@ -785,10 +748,10 @@ void plat_update_volume(int has_changed, int is_up)
 
 	/* set the right mixer func */
 	if (vol >= 5)
-		PsndMix_32_to_16 = mix_32_to_16_stereo;
+		PsndMix_32_to_16l = mix_32_to_16l_stereo;
 	else {
-		mix_32_to_16_level = 5 - vol;
-		PsndMix_32_to_16 = mix_32_to_16_stereo_lvl;
+		mix_32_to_16l_level = 5 - vol;
+		PsndMix_32_to_16l = mix_32_to_16l_stereo_lvl;
 	}
 }
 
@@ -810,7 +773,7 @@ void pemu_sound_start(void)
 	}
 }
 
-static const int sound_rates[] = { 52000, 44100, 32000, 22050, 16000, 11025, 8000 };
+static const int sound_rates[] = { 53000, 44100, 32000, 22050, 16000, 11025, 8000 };
 
 void pemu_sound_stop(void)
 {

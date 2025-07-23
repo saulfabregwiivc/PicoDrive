@@ -1,6 +1,6 @@
 /*
  * PicoDrive 32X memory access functions, assembler version
- * (C) irixxxx, 2018-2021
+ * (C) KUB, 2018
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.

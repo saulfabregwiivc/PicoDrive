@@ -1,6 +1,5 @@
 /*
- * PicoDrive MP3 driver for PSP
- *
+ * PicoDrive
  * (C) notaz, 2007,2008
  *
  * This work is licensed under the terms of MAME license.

@@ -100,7 +100,7 @@ endif
 SRCS_COMMON += $(R)pico/cd/mcd.c $(R)pico/cd/memory.c $(R)pico/cd/sek.c \
 	$(R)pico/cd/cdc.c $(R)pico/cd/cdd.c $(R)pico/cd/cd_image.c \
 	$(R)pico/cd/cd_parse.c $(R)pico/cd/gfx.c $(R)pico/cd/gfx_dma.c \
-	$(R)pico/cd/misc.c $(R)pico/cd/pcm.c $(R)pico/cd/megasd.c
+	$(R)pico/cd/misc.c $(R)pico/cd/pcm.c
 # 32X
 ifneq "$(no_32x)" "1"
 SRCS_COMMON += $(R)pico/32x/32x.c $(R)pico/32x/memory.c $(R)pico/32x/draw.c \
@@ -124,7 +124,7 @@ endif
 # sound
 SRCS_COMMON += $(R)pico/sound/sound.c $(R)pico/sound/resampler.c
 SRCS_COMMON += $(R)pico/sound/sn76496.c $(R)pico/sound/ym2612.c
-SRCS_COMMON += $(R)pico/sound/ym2413.c
+SRCS_COMMON += $(R)pico/sound/emu2413/emu2413.c
 ifneq "$(ARCH)$(asm_mix)" "arm1"
 SRCS_COMMON += $(R)pico/sound/mix.c
 endif
@@ -205,9 +205,8 @@ $(FR)cpu/cyclone/Cyclone.s: $(FR)cpu/$(CYCLONE_CONFIG)
 
 $(FR)cpu/cyclone/Cyclone.s: $(FR)cpu/cyclone/*.cpp $(FR)cpu/cyclone/*.h
 
-$(FR)cpu/musashi/m68kops.c: $(FR)cpu/musashi/m68k_in.c
+$(FR)cpu/musashi/m68kops.c:
 	@make -C $(R)cpu/musashi
-$(FR)cpu/musashi/m68kcpu.c: $(FR)cpu/musashi/m68kops.c
 
 deps_set = yes
 endif # deps_set

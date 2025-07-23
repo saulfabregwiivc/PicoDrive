@@ -1,6 +1,6 @@
 /*
  * very basic mips disassembler for MIPS32/MIPS64 Release 2, only for picodrive
- * Copyright (C) 2019-2021 irixxxx
+ * Copyright (C) 2019 kub
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.

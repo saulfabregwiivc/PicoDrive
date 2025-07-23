@@ -1,7 +1,6 @@
 ;@ Reesy's Z80 Emulator Version 0.001
 
 ;@ (c) Copyright 2004 Reesy, All rights reserved
-;@ (c) Copyright 2021-24 irixxxx, All rights reserved
 ;@ DrZ80 is free for non-commercial use.
 
 ;@ For commercial use, separate licencing terms must be obtained.
@@ -209,7 +208,6 @@ z80_xmap_read16: @ addr
     bl z80_xmap_read8
     mov r9,r0
     add r0,r8,#1
-    bic r0,r0,#1<<16
     bl z80_xmap_read8
     orr r0,r9,r0,lsl #8
     ldmfd sp!,{r2,r8,r9,pc}
@@ -238,7 +236,6 @@ z80_xmap_write16: @ data, addr
     bl z80_xmap_write8
     mov r0,r8,lsr #8
     add r1,r9,#1
-    bic r1,r1,#1<<16
     bl z80_xmap_write8
     ldmfd sp!,{r2,r8,r9,pc}
 
@@ -289,9 +286,9 @@ z80_xmap_rebase_sp:
 	sub r2,z80pc,r1
 	str r2,[cpucontext,#previouspc]
 .endif
-	ldrgtb r0,[z80pc],#1
-	ldrgt pc,[opcodes,r0, lsl #2]
-	ble z80_execute_end
+	ldrplb r0,[z80pc],#1
+	ldrpl pc,[opcodes,r0, lsl #2]
+	bmi z80_execute_end
 .endm
 
 .macro eatcycles cycs
@@ -830,7 +827,6 @@ z80_xmap_rebase_sp:
 	mov r0,z80sp
 	readmem16
 	add z80sp,z80sp,#2
-	bic z80sp,z80sp,#1<<16
 .endif
 .endm
 
@@ -859,8 +855,7 @@ z80_xmap_rebase_sp:
 	strb \reg,[z80sp,#-1]!
 .else
     mov r0,\reg
-	subs z80sp,z80sp,#2
-	addcc z80sp,z80sp,#1<<16
+	sub z80sp,z80sp,#2
 	mov r1,z80sp
 	writemem16
 .endif
@@ -877,8 +872,7 @@ z80_xmap_rebase_sp:
 	strb r1,[z80sp,#-1]!
 .else
 	mov r0,\reg,lsr #16
-	subs z80sp,z80sp,#2
-	addcc z80sp,z80sp,#1<<16
+	sub z80sp,z80sp,#2
 	mov r1,z80sp
 	writemem16
 .endif
@@ -1448,8 +1442,8 @@ DrZ80Run:
 	PIC_LDR(opcodes, r0, MAIN_opcodes)
 
 	cmp z80_icount,#0     ;@ irq might have used all cycles
-	ldrgtb r0,[z80pc],#1
-	ldrgt pc,[opcodes,r0, lsl #2]
+	ldrplb r0,[z80pc],#1
+	ldrpl pc,[opcodes,r0, lsl #2]
 
 
 z80_execute_end:
@@ -1478,7 +1472,7 @@ DoInterrupt:
 	;@ r0 == z80if
 	stmfd sp!,{r2,lr}
 
-	tst r0,#Z80_HALT ;@ check halt
+	tst r0,#4 ;@ check halt
 	addne z80pc,z80pc,#1
 
 	ldrb r1,[cpucontext,#z80im]
@@ -1509,8 +1503,7 @@ DoInterrupt_mode0:
 	strb r1,[z80sp,#-1]!
 	strb r0,[z80sp,#-1]!
 .else
-	subs z80sp,z80sp,#2
-	addcc z80sp,z80sp,#1<<16
+	sub z80sp,z80sp,#2
 	mov r1,z80sp
 	writemem16
 	ldr r2,[cpucontext, #z80irqvector]
@@ -1584,9 +1577,7 @@ DoInterrupt_end:
 	;@ interupt accepted so callback irq interface
 	ldr r0,[cpucontext, #z80irqcallback]
 	tst r0,r0
-	ldreqb r0,[cpucontext,#z80irq]       ;@ default handling
-	biceq r0,r0,#1
-	streqb r0,[cpucontext,#z80irq]
+	streqb r0,[cpucontext,#z80irq]       ;@ default handling
 	ldmeqfd sp!,{r2,pc}
 	stmfd sp!,{r3,r12}
 	mov lr,pc
@@ -4736,9 +4727,6 @@ opcode_3_2:
 ;@INC SP
 opcode_3_3:
 	add z80sp,z80sp,#1
-.if !FAST_Z80SP
-	bic z80sp,z80sp,#1<<16
-.endif
 	fetch 6
 ;@INC (HL)
 opcode_3_4:
@@ -4789,10 +4777,7 @@ opcode_3_A:
 	fetch 13
 ;@DEC SP
 opcode_3_B:
-	subs z80sp,z80sp,#1
-.if !FAST_Z80SP
-	addcc z80sp,z80sp,#1<<16
-.endif
+	sub z80sp,z80sp,#1
 	fetch 6
 ;@INC A
 opcode_3_C:
@@ -5755,7 +5740,6 @@ opcode_F_1:
 	mov r0,z80sp
 	readmem16
 	add z80sp,z80sp,#2
-	bic z80sp,z80sp,#1<<16
 	and z80a,r0,#0xFF00
 	mov z80a,z80a,lsl#16
 	and z80f,r0,#0xFF
@@ -5774,10 +5758,7 @@ opcode_F_3:
 	ldrb r1,[cpucontext,#z80if]
 	bic r1,r1,#(Z80_IF1)|(Z80_IF2)
 	strb r1,[cpucontext,#z80if]
-
-	ldrb r0,[z80pc],#1
-	eatcycles 4
-	ldr pc,[opcodes, r0, lsl #2]
+	fetch 4
 ;@CALL P,NN
 opcode_F_4:
 	tst z80f,#1<<SFlag
@@ -7649,7 +7630,6 @@ opcode_DD_E1:
 	readmem16
 	ldmfd sp!,{r2,z80xx}
 	add z80sp,z80sp,#2
-	bic z80sp,z80sp,#1<<16
 .endif
 	strh r0,[z80xx,#2]
 	fetch 14

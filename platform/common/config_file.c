@@ -53,7 +53,7 @@ static int seek_sect(FILE *f, const char *section)
 	return 0;
 }
 
-static void keys_write(FILE *fn, int dev_id, const int *binds, const int *kbd_binds)
+static void keys_write(FILE *fn, int dev_id, const int *binds)
 {
 	char act[48];
 	int key_count = 0, k, i;
@@ -67,8 +67,6 @@ static void keys_write(FILE *fn, int dev_id, const int *binds, const int *kbd_bi
 		act[0] = act[31] = 0;
 
 		name = in_get_key_name(dev_id, k);
-		if (strcmp(name, "#") == 0) name = "\\x23"; // replace comment sign
-		if (strcmp(name, "=") == 0) name = "\\x3d"; // replace assignment sign
 
 		for (i = 0; me_ctrl_actions[i].name != NULL; i++) {
 			mask = me_ctrl_actions[i].mask;
@@ -104,14 +102,6 @@ static void keys_write(FILE *fn, int dev_id, const int *binds, const int *kbd_bi
 			}
 		}
 	}
-
-	for (k = 0; k < key_count; k++) {
-		const char *name = in_get_key_name(dev_id, k);
-		if (strcmp(name, "#") == 0) name = "\\x23"; // replace comment sign
-		if (strcmp(name, "=") == 0) name = "\\x3d"; // replace assignment sign
-		if (kbd_binds[k])
-			fprintf(fn, "bind %s = key%02x" NL, name, kbd_binds[k]);
-	}
 }
 
 int config_write(const char *fname)
@@ -128,7 +118,7 @@ int config_write(const char *fname)
 	for (me = me_list_get_first(); me != NULL; me = me_list_get_next())
 	{
 		int dummy;
-		if (!me->need_to_save)
+		if (!me->need_to_save || !me->enabled)
 			continue;
 		if (me->name == NULL || me->name[0] == 0)
 			continue;
@@ -139,10 +129,8 @@ int config_write(const char *fname)
 		else if (me->beh == MB_OPT_RANGE || me->beh == MB_OPT_CUSTRANGE) {
 			fprintf(fn, "%s = %i" NL, me->name, *(int *)me->var);
 		}
-		else if (me->beh == MB_OPT_ENUM) {
+		else if (me->beh == MB_OPT_ENUM && me->data != NULL) {
 			const char **names = (const char **)me->data;
-			if (names == NULL)
-				continue;
 			for (t = 0; names[t] != NULL; t++) {
 				if (*(int *)me->var == t) {
 					strncpy(line, names[t], sizeof(line)-1);
@@ -157,8 +145,7 @@ int config_write(const char *fname)
 			goto write_line;
 		}
 		else
-			lprintf("config: unhandled write: '%s' id %d behavior %d\n",
-				me->name, me->id, me->beh);
+			lprintf("config: unhandled write: %i\n", me->id);
 		continue;
 
 write_line:
@@ -180,7 +167,7 @@ write_line:
 		fprintf(fn, "binddev = %s" NL, name);
 
 		in_get_config(t, IN_CFG_BIND_COUNT, &count);
-		keys_write(fn, t, binds, in_get_dev_kbd_binds(t));
+		keys_write(fn, t, binds);
 	}
 
 	fprintf(fn, "Sound Volume = %i" NL, currentConfig.volume);
@@ -275,7 +262,6 @@ int config_readlrom(const char *fname)
 static int custom_read(menu_entry *me, const char *var, const char *val)
 {
 	char *tmp;
-	int i;
 
 	switch (me->id)
 	{
@@ -365,25 +351,6 @@ static int custom_read(menu_entry *me, const char *var, const char *val)
 			currentConfig.max_skip = atoi(val);
 			return 1;
 
-		case MA_OPT_KEYBOARD:
-			currentConfig.keyboard = 0;
-			if (strcasecmp(val, "physical") == 0)
-				currentConfig.keyboard = 2;
-			else if (strcasecmp(val, "virtual") == 0)
-				currentConfig.keyboard = 1;
-			return 1;
-
-		case MA_OPT_INPUT_DEV0:
-			for (i = 0; indev_names[i]; i++)
-				if (strcasecmp(val, indev_names[i]) == 0)
-					currentConfig.input_dev0 = i;
-			return 1;
-		case MA_OPT_INPUT_DEV1:
-			for (i = 0; indev_names[i]; i++)
-				if (strcasecmp(val, indev_names[i]) == 0)
-					currentConfig.input_dev1 = i;
-			return 1;
-
 		/* PSP */
 		case MA_OPT3_VSYNC:
 			// XXX: use enum
@@ -413,12 +380,6 @@ static int parse_bind_val(const char *val, int *type)
 	if (val[0] == 0)
 		return 0;
 	
-	if (strncasecmp(val, "key", 3) == 0)
-	{
-		*type = IN_BINDTYPE_KEYBOARD;
-		return strtol(val + 3, NULL, 16);
-	}
-
 	if (strncasecmp(val, "player", 6) == 0)
 	{
 		int player, shift = 0;
@@ -477,10 +438,7 @@ static void keys_parse_all(FILE *f)
 		}
 
 		mystrip(var + 5);
-		if (type == IN_BINDTYPE_KEYBOARD)
-			in_config_bind_kbd_key(dev_id, var + 5, acts);
-		else
-			in_config_bind_key(dev_id, var + 5, acts, type);
+		in_config_bind_key(dev_id, var + 5, acts, type);
 	}
 	in_clean_binds();
 }

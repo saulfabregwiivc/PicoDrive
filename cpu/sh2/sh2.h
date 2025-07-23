@@ -50,10 +50,11 @@ typedef struct SH2_
 #define SH2_STATE_CPOLL (1 << 2)	// polling comm regs
 #define SH2_STATE_VPOLL (1 << 3)	// polling VDP
 #define SH2_STATE_RPOLL (1 << 4)	// polling address in SDRAM
+#define SH2_TIMER_RUN   (1 << 6)	// SOC WDT timer is running
 #define SH2_IN_DRC      (1 << 7)	// DRC in use
 	unsigned int	state;
 	uint32_t	poll_addr;
-	unsigned int	poll_cycles;
+	int		poll_cycles;
 	int		poll_cnt;
 // NB MUST be a bit unused in SH2 SR, see also cpu/sh2/compiler.c!
 #define SH2_NO_POLLING	(1 << 10)	// poll detection control

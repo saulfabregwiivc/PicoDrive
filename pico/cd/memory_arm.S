@@ -51,7 +51,7 @@
 .global PicoWriteS68k16_dec_m2b1
 
 @ externs, just for reference
-.extern Pico_mcd
+.extern Pico
 .extern cdc_host_r
 .extern m68k_reg_write8
 .extern s68k_reg_read16
@@ -130,9 +130,9 @@ PicoReadM68k8_cell1:                    @ 0x220000 - 0x23ffff, cell arranged
     mov     r3, #0x0e0000
 0:
     cell_map
-    PIC_LDR(r1, r2, Pico_mcd)
+    PIC_LDR(r1, r2, Pico)
     add     r0, r0, r3
-    ldr     r1, [r1]                  @ Pico.mcd (used everywhere)
+    ldr     r1, [r1, #OFS_Pico_rom]   @ Pico.mcd (used everywhere)
     eor     r0, r0, #1
     ldrb    r0, [r1, r0]
     bx      lr
@@ -143,9 +143,9 @@ PicoRead8_mcd_io:
     cmp     r1, #0x2000	              @ a120xx?
     bne     PicoRead8_io
 
-    PIC_LDR(r1, r2, Pico_mcd)
+    PIC_LDR(r1, r2, Pico)
     and     r0, r0, #0x3f
-    ldr     r1, [r1]                  @ Pico.mcd
+    ldr     r1, [r1, #OFS_Pico_rom]   @ Pico.mcd
     cmp     r0, #0x0e
     PIC_XB(lt ,r0, lsl #2)
     b       m_m68k_read8_hi
@@ -165,13 +165,9 @@ PicoRead8_mcd_io:
     PIC_BT(m_m68k_read8_r0d)
 m_m68k_read8_r00:
     add     r1, r1, #0x110000
-    ldr     r0, [r1, #0x30]           @ Pico_mcd->s68k_regs
-    add     r1, r1, #0x002200
-    ldr     r1, [r1, #4]              @ Pico_mcd->m.state_flags
+    ldr     r0, [r1, #0x30]
     and     r0, r0, #0x04000000       @ we need irq2 mask state
     mov     r0, r0, lsr #19
-    and     r1, r1, #0x00000100       @ irq2 pending
-    orr     r0, r0, r1, lsr #8
     bx      lr
 m_m68k_read8_r01:
     add     r1, r1, #0x110000
@@ -185,7 +181,6 @@ m_m68k_read8_r02:
 m_m68k_read8_r03:
     add     r1, r1, #0x110000
     stmfd   sp!, {r1, lr}
-    bic     r0, r0, #1
     bl      m68k_comm_check
     ldmfd   sp!, {r1, lr}
     ldrb    r0, [r1, #3]
@@ -210,13 +205,17 @@ m_m68k_read8_r09:
     mov     r0, #0
     b       cdc_host_r
 m_m68k_read8_r0c:
-    mov     r1, #0
-    bl      pcd_stopwatch_read
-    mov     r0, r0, lsr #8
+    add     r1, r1, #0x110000
+    add     r1, r1, #0x002200
+    ldr     r0, [r1, #0x14]           @ Pico_mcd->m.timer_stopwatch
+    mov     r0, r0, lsr #24
     bx      lr
 m_m68k_read8_r0d:
-    mov     r1, #0
-    b       pcd_stopwatch_read
+    add     r1, r1, #0x110000
+    add     r1, r1, #0x002200
+    ldr     r0, [r1, #0x14]
+    mov     r0, r0, lsr #16
+    bx      lr
 m_m68k_read8_hi:
     cmp     r0, #0x30
     add     r1, r1, #0x110000
@@ -224,7 +223,6 @@ m_m68k_read8_hi:
     bxge    lr
     add     r1, r1, r0
     stmfd   sp!, {r1, lr}
-    bic     r0, r0, #1
     bl      m68k_comm_check
     ldmfd   sp!, {r1, lr}
     ldrb    r0, [r1]
@@ -242,9 +240,9 @@ PicoReadM68k16_cell1:                   @ 0x220000 - 0x23ffff, cell arranged
     mov     r3, #0x0e0000
 0:
     cell_map
-    PIC_LDR(r1, r2, Pico_mcd)
+    PIC_LDR(r1, r2, Pico)
     add     r0, r0, r3
-    ldr     r1, [r1]                  @ Pico.mcd
+    ldr     r1, [r1, #OFS_Pico_rom]   @ Pico.mcd
     bic     r0, r0, #1
     ldrh    r0, [r1, r0]
     bx      lr
@@ -256,9 +254,9 @@ PicoRead16_mcd_io:
     bne     PicoRead16_io
 
 m_m68k_read16_m68k_regs:
-    PIC_LDR(r1, r2, Pico_mcd)
+    PIC_LDR(r1, r2, Pico)
     and     r0, r0, #0x3e
-    ldr     r1, [r1]                  @ Pico.mcd
+    ldr     r1, [r1, #OFS_Pico_rom]   @ Pico.mcd
     cmp     r0, #0x0e
     PIC_XB(lt ,r0, lsl #1)
     b       m_m68k_read16_hi
@@ -273,12 +271,9 @@ m_m68k_read16_r00:
     add     r1, r1, #0x110000
     ldr     r0, [r1, #0x30]
     add     r1, r1, #0x002200
-    ldrb    r2, [r1, #2]              @ Pico_mcd->m.busreq
-    ldr     r1, [r1, #4]
+    ldrb    r1, [r1, #2]              @ Pico_mcd->m.busreq
     and     r0, r0, #0x04000000       @ we need irq2 mask state
-    orr     r0, r2, r0, lsr #11
-    and     r1, r1, #0x00000100       @ irq2 pending
-    orr     r0, r1, r0
+    orr     r0, r1, r0, lsr #11
     bx      lr
 m_m68k_read16_r02:
     add     r1, r1, #0x110000
@@ -302,8 +297,11 @@ m_m68k_read16_r08:
     mov     r0, #0
     b       cdc_host_r
 m_m68k_read16_r0c:
-    mov     r1, #0
-    b       pcd_stopwatch_read
+    add     r1, r1, #0x110000
+    add     r1, r1, #0x002200
+    ldr     r0, [r1, #0x14]
+    mov     r0, r0, lsr #16
+    bx      lr
 m_m68k_read16_hi:
     cmp     r0, #0x30
     add     r1, r1, #0x110000
@@ -333,9 +331,9 @@ PicoWriteM68k8_cell1:                   @ 0x220000 - 0x23ffff, cell arranged
 0:
     mov     r3, r1
     cell_map
-    PIC_LDR(r2, r1, Pico_mcd)
+    PIC_LDR(r2, r1, Pico)
     add     r0, r0, r12
-    ldr     r2, [r2]                    @ Pico.mcd
+    ldr     r2, [r2, #OFS_Pico_rom]     @ Pico.mcd
     ldr     r2, [r2]
     eor     r0, r0, #1
     strb    r3, [r2, r0]
@@ -346,11 +344,6 @@ PicoWrite8_mcd_io:
     and     r2, r0, #0xff00
     cmp     r2, #0x2000                 @ a120xx?
     beq     m68k_reg_write8
-
-    PIC_LDR(r2, r3, carthw_ssf2_active)
-    ldr     r2, [r2]
-    tst     r2, r2
-    bne     carthw_ssf2_write8
     b       PicoWrite8_io
 
 
@@ -366,9 +359,9 @@ PicoWriteM68k16_cell1:                   @ 0x220000 - 0x23ffff, cell arranged
 0:
     mov     r3, r1
     cell_map
-    PIC_LDR(r1, r2, Pico_mcd)
+    PIC_LDR(r1, r2, Pico)
     add     r0, r0, r12
-    ldr     r1, [r1]                    @ Pico.mcd
+    ldr     r1, [r1, #OFS_Pico_rom]     @ Pico.mcd
     bic     r0, r0, #1
     strh    r3, [r1, r0]
     bx      lr
@@ -377,13 +370,7 @@ PicoWriteM68k16_cell1:                   @ 0x220000 - 0x23ffff, cell arranged
 PicoWrite16_mcd_io:
     and     r2, r0, #0xff00
     cmp     r2, #0x2000                 @ a120xx?
-    beq     m_m68k_write16_regs
-
-    PIC_LDR(r2, r3, carthw_ssf2_active)
-    ldr     r2, [r2]
-    tst     r2, r2
-    bne     carthw_ssf2_write16
-    b       PicoWrite16_io
+    bne     PicoWrite16_io
 
 m_m68k_write16_regs:
     and     r0, r0, #0x3e
@@ -391,10 +378,10 @@ m_m68k_write16_regs:
     beq     m_m68k_write16_regs_spec
     and     r3, r1, #0xff
     add     r2, r0, #1
-    stmfd   sp!,{r2,r3,r12,lr}
+    stmfd   sp!,{r2,r3,lr}
     mov     r1, r1, lsr #8
     bl      m68k_reg_write8
-    ldmfd   sp!,{r0,r1,r12,lr}
+    ldmfd   sp!,{r0,r1,lr}
     b       m68k_reg_write8
 
 m_m68k_write16_regs_spec:               @ special case
@@ -414,9 +401,9 @@ PicoReadS68k8_dec0:                     @ 0x080000 - 0x0bffff
 PicoReadS68k8_dec1:
     mov     r3, #0x0a0000               @ + ^ / 2
 0:
-    PIC_LDR(r2, r1, Pico_mcd)
+    PIC_LDR(r2, r1, Pico)
     eor     r0, r0, #2
-    ldr     r2, [r2]                    @ Pico.mcd
+    ldr     r2, [r2, #OFS_Pico_rom]     @ Pico.mcd
     movs    r0, r0, lsr #1              @ +4-6 <<16
     add     r2, r2, r3                  @ map to our address
     ldrb    r0, [r2, r0]
@@ -446,8 +433,8 @@ m_s68k_read8_regs:
     bx      lr
 
 m_s68k_read8_comm:
-    PIC_LDR(r1, r2, Pico_mcd)
-    ldr     r1, [r1]                    @ Pico.mcd
+    PIC_LDR(r1, r2, Pico)
+    ldr     r1, [r1, #OFS_Pico_rom]     @ Pico.mcd
     add     r1, r1, #0x110000
     ldrb    r1, [r1, r0]
     bic     r0, r0, #1
@@ -459,9 +446,9 @@ m_s68k_read8_pcm:
     bne     m_read_null
 
     @ must not trash r3 and r12
-    PIC_LDR(r1, r2, Pico_mcd)
+    PIC_LDR(r1, r2, Pico)
     bic     r0, r0, #0xff0000
-    ldr     r1, [r1]                    @ Pico.mcd
+    ldr     r1, [r1, #OFS_Pico_rom]     @ Pico.mcd
     mov     r2, #0x110000
     orr     r2, r2, #0x002200
     cmp     r0, #0x2000
@@ -494,9 +481,9 @@ PicoReadS68k16_dec0:                    @ 0x080000 - 0x0bffff
 PicoReadS68k16_dec1:
     mov     r3, #0x0a0000               @ + ^ / 2
 0:
-    PIC_LDR(r2, r1, Pico_mcd)
+    PIC_LDR(r2, r1, Pico)
     eor     r0, r0, #2
-    ldr     r2, [r2]                    @ Pico.mcd
+    ldr     r2, [r2, #OFS_Pico_rom]     @ Pico.mcd
     mov     r0, r0, lsr #1              @ +4-6 <<16
     add     r2, r2, r3                  @ map to our address
     ldrb    r0, [r2, r0]
@@ -524,9 +511,9 @@ m_s68k_read16_regs:
 
 
 .macro m_s68k_write8_2M_decode
-    PIC_LDR(r2, ip, Pico_mcd)
+    PIC_LDR(r2, ip, Pico)
     eor     r0, r0, #2
-    ldr     r2, [r2]                    @ Pico.mcd
+    ldr     r2, [r2, #OFS_Pico_rom]     @ Pico.mcd
     movs    r0, r0, lsr #1              @ +4-6 <<16
     add     r2, r2, r3                  @ map to our address
 .endm
@@ -608,9 +595,9 @@ m_s68k_write8_pcm:
     bxlt    lr
 
 m_s68k_write8_pcm_ram:
-    PIC_LDR(r3, r2, Pico_mcd)
+    PIC_LDR(r3, r2, Pico)
     bic     r0, r0, #0x00e000
-    ldr     r3, [r3]                    @ Pico.mcd
+    ldr     r3, [r3, #OFS_Pico_rom]     @ Pico.mcd
     mov     r0, r0, lsr #1
     add     r2, r3, #0x110000
     add     r2, r2, #0x002200
@@ -626,9 +613,9 @@ m_s68k_write8_pcm_ram:
 
 
 .macro m_s68k_write16_2M_decode
-    PIC_LDR(r2, ip, Pico_mcd)
+    PIC_LDR(r2, ip, Pico)
     eor     r0, r0, #2
-    ldr     r2, [r2]                    @ Pico.mcd
+    ldr     r2, [r2, #OFS_Pico_rom]     @ Pico.mcd
     mov     r0, r0, lsr #1              @ +4-6 <<16
     add     r2, r2, r3                  @ map to our address
 .endm
@@ -707,9 +694,9 @@ m_s68k_write16_regs:
     bne     s68k_reg_write16
 
 m_s68k_write16_regs_spec:               @ special case
-    PIC_LDR(r2, r0, Pico_mcd)
+    PIC_LDR(r2, r0, Pico)
     mov     r0, #0x110000
-    ldr     r2, [r2]                    @ Pico.mcd
+    ldr     r2, [r2, #OFS_Pico_rom]     @ Pico.mcd
     add     r0, r0, #0x00000f
     strb    r1, [r2, r0]                @ if (a == 0xe) s68k_regs[0xf] = d;
     bx      lr

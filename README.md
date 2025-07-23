@@ -1,156 +1,74 @@
-This is yet another SEGA 8 bit and 16 bit console emulator.
+This is my foray into dynamic recompilation using PicoDrive, a
+Megadrive / Genesis / Sega CD / Mega CD / 32X / SMS emulator.
 
-It can run games developed for most consumer hardware released
-by SEGA, up to and including the 32X:
-- **16 bit systems:** Mega Drive/Genesis, Sega/Mega CD, 32X, Pico
-- **8 bit systems**: SG-1000, SC-3000, Master System/Mark III, Game Gear
+I added support for MIPS (mips32r2), ARM64 (armv8), RISC-V (RV64IM) and
+PowerPC (G4/2.03) support to the SH2 recompiler, as well as spent much effort to
+optimize the DRC-generated code. I also optimized SH2 memory access inside the
+emulator, and did some work on M68K/SH2 CPU synchronization to fix some problems
+and speed up the emulator.
 
-PicoDrive was originally created with ARM-based handheld devices
-in mind, but later received various cross-platform improvements
-such as SH2 recompilers for MIPS (mips32r2), ARM64 (armv8), RISC-V (RV64IM)
-and PowerPC (G4/2.03).
+It got a bit out of hand. I ended up doing fixes and optimizations all over the
+place, mainly for 32X and CD, graphics handling, sound, and probably some more,
+see the commit history. As a result, 32X emulation speed has improved a lot, a
+lot of bugs were fixed, and some new features (e.g. chd file support) have been
+added.
 
-PicoDrive was the first software to properly emulate Virtua Racing and
-its SVP chip.
+### compiling
 
-At present, most development activity occurs in
-[irixxxx's fork](https://github.com/irixxxx/picodrive);
-[notaz's repo](https://github.com/notaz/picodrive) is updated less frequently.
+I mainly worked with standalone PicoDrive versions as created by configure/make.
+A list of platforms for which this is possible can be obtained with
 
-### Using MSU, MD+/32X+, and Mode 1 on Sega/Mega CD
+> configure --help
 
-PicoDrive supports using CD audio enhanced cartridge games in all 3 formats.
-To start an enhanced cartridge, load the .cue or .chd file. The cartridge
-file should have the same base name and be placed in the same directory.
-Further instructions can be found in `platform/base_readme.txt`.
+If you want to build an executable for a unixoid platform not listed in the
+platform list, just use
 
-### Sega Pico and Storyware Pages
+> configure --platform=generic
 
-PicoDrive can use Storyware pages and pad overlays in png format in the same
-directory as the cartridge image. The selected page is displayed automatically
-if the pen is used on the storyware or pad. Details about how to correctly name
-the pages can be found in `platform/base_readme.txt`.
+If DRC is available for the platform, it should be enabled automatically.
 
-### Sega Pico Pen and Sega Mouse
+For other platforms using a cross-compiling toolchain I used this,
+assuming $TC points to the appropriate cross compile toolchain directory:
 
-On all platforms with physical mouse support, PicoDrive can use real mouse
-input to emulate a Sega Mouse or the Pico Pen. A physical mouse can be operated
-in either a captured or uncaptured state, selectable via the `Capture mouse`
-hotkey. Mouse mode can be activated by setting `mouse` as the input device for
-one of the pads. It depends on the game as to which pad should be used for mouse
-input. More information is located in `platform/base_readme.txt`.
+platform|toolchain|configure command
+--------|---------|-----------------
+gp2x,wiz,caanoo|open2x|CROSS_COMPILE=arm-open2x-linux- CFLAGS="-I$TC/gcc-4.1.1-glibc-2.3.6/arm-open2x-linux/include" LDFLAGS="--sysroot $TC/gcc-4.1.1-glibc-2.3.6/arm-open2x-linux -L$TC/gcc-4.1.1-glibc-2.3.6/arm-open2x-linux/lib" ./configure --platform=gp2x
+gp2x,wiz,caanoo|open2x with ubuntu arm gcc 4.7|CROSS_COMPILE=arm-linux-gnueabi- CFLAGS="-I$TC/gcc-4.1.1-glibc-2.3.6/arm-open2x-linux/include" LDFLAGS="-B$TC/gcc-4.1.1-glibc-2.3.6/lib/gcc/arm-open2x-linux/4.1.1 -B$TC/gcc-4.1.1-glibc-2.3.6/arm-open2x-linux/lib -L$TC/gcc-4.1.1-glibc-2.3.6/arm-open2x-linux/lib" ./configure --platform=gp2x
+dingux|dingux|CROSS_COMPILE=mipsel-linux- CFLAGS="-I$TC/usr/include -I$TC/usr/include/SDL" LDFLAGS="--sysroot $TC -L$TC/lib" ./configure --platform=dingux
+dingux|dingux with ubuntu mips gcc 5.4|CROSS_COMPILE=mipsel-linux-gnu- CFLAGS="-I$TC/usr/include -I$TC/usr/include/SDL" LDFLAGS="-B$TC/usr/lib -B$TC/lib -Wl,-rpath-link=$TC/usr/lib -Wl,-rpath-link=$TC/lib" ./configure --platform=dingux
+retrofw|retrofw|CROSS_COMPILE=mipsel-linux- CFLAGS="-I $TC/include -I $TC/include/SDL -Wno-unused-result" LDFLAGS="--sysroot $TC/mipsel-buildroot-linux-uclibc/sysroot" ./configure --platform=retrofw
+gcw0|gcw0|CROSS_COMPILE=mipsel-gcw0-linux-uclibc- CFLAGS="-I$TC/usr/mipsel-gcw0-linux-uclibc/sysroot/usr/include -I$TC/usr/mipsel-gcw0-linux-uclibc/sysroot/usr/include/SDL" LDFLAGS="--sysroot $TC/usr/mipsel-gcw0-linux-uclibc/sysroot" ./configure --platform=gcw0
+rg350|rg350|CROSS_COMPILE=mipsel-linux- CFLAGS="-I$TC/usr/include -I$TC/usr/include/SDL" LDFLAGS="--sysroot $TC -L$TC/lib" ./configure --platform=rg350
+miyoo|miyoo|CROSS_COMPILE=arm-miyoo-linux-uclibcgnueabi- CFLAGS="-I$TC/arm-miyoo-linux-uclibcgnueabi/sysroot/usr/include -I$TC/arm-miyoo-linux-uclibcgnueabi/sysroot/usr/include/SDL" LDFLAGS="--sysroot $TC/arm-miyoo-linux-uclibcgnueabi/sysroot" ./configure --platform=miyoo
 
-### Sega Menacer and Light Phaser and Konami Justifier
+For gp2x, wiz, and caanoo you may need to compile libpng first.
 
-PicoDrive can use a physical mouse for light gun emulation on all platforms
-with mouse support. This can be activated by selecting an input device of
-either `light gun` or `justifier`. The `light gun` setting represents the Sega
-Menacer for the Mega Drive or the Light Phaser for the Master System; it may
-be attached to either pad input port. The `justifier` is only available on
-input 2. Supplementary information is provided in `platform/base_readme.txt`.
+After configure, compile with
 
-### Sega Pico and SC-3000 Keyboards
+> make
 
-PicoDrive provides support for the Pico and SC-3000 keyboards. This can be
-enabled in the `Controls` configuration menu. Once enabled, keyboard input may
-be activated via the `Keyboard` emulator hotkey.
+### helix MP3 decoder for ARM
 
-Both physical keyboard support and a virtual keyboard overlay are available.
-Physical keyboards are assigned a default key mapping corresponding to an
-American PC layout, but the mapping can be redefined in the `Controls`
-configuration menu. Note that only 'unmodified' physical key presses (e.g.
-`a`, `1` etc) can be mapped to emulated keyboard input; special characters
-entered via modifier/meta keys (e.g. `Ctrl`, `Shift` etc) will not work.
-Additional information may be found in `platform/base_readme.txt`.
+For 32 bit ARM platforms, there is the possibility to compile the helix MP3
+decoder into a shared library to be able to use MP3 audio files with CD games.
+The helix source files aren't supplied because of licensing issues. However, if
+you have obtained the sources, put them into the platform/common/helix
+directory, set CROSS to your cross compiler prefix (e.g. arm-linux-gnueabi-)
+and LIBGCC to your cross compiler's libgcc.a
+(e.g. /usr/lib/gcc-cross/arm-linux-gnueabi/4.7/libgcc.a), and compile with
 
-### Sega SC-3000 Cassette Drive
+> make -C platform/common/helix CROSS=$CROSS LIBGCC=$LIBGCC
 
-In addition to keyboard support, PicoDrive emulates the SC-3000 cassette tape
-drive which may be used in conjunction with BASIC cartridges. Tape emulation
-includes an automatic start/stop feature, where the tape is only advanced when
-it is accessed by the SC-3000; manual pausing of the tape is unnecessary for
-multi-part loading or saving.
+Copy the resulting ${CROSS}helix_mp3.so as libhelix.so to the directory where
+the PicoDrive binary is.
 
-PicoDrive supports tape files in `WAV` and `bitstream` format.
+### installing
 
-### Gallery
+You need to install the resulting binary onto your device manually.
+For opendingux, gcw0, and rg350, copy the opk to your SD card.
+For gp2x, wiz, and caanoo, the easiest way is to unpack
+[PicoDrive_191.zip](http://notaz.gp2x.de/releases/PicoDrive/PicoDrive_191.zip)
+on your SD card and replace the PicoDrive binary.
+For legacy dingux, unpack the dge zip and copy the files to your SD card.
 
-Some images of demos and homebrew software:
-
-| ![Titan Overdrive 2](https://github.com/irixxxx/picodrive/assets/31696370/02a4295b-ac9d-4114-bcd1-b5dd6e5930d0) | ![Raycast Demo](https://github.com/irixxxx/picodrive/assets/31696370/6e9c0bfe-49a9-45aa-bad7-544de065e388) | ![OpenLara](https://github.com/irixxxx/picodrive/assets/31696370/8a00002a-5c10-4d1d-a948-739bf978282a) |
-| --- | --- | --- |
-| [_MegaDrive: Titan Overdrive 2_](https://demozoo.org/productions/170767/) | [_MegaCD: RaycastDemo_](https://github.com/matteusbeus/RaycastDemo) | [_32X: OpenLara_](https://github.com/XProger/OpenLara/releases) |
-|![Titan Overdrive 2](https://github.com/irixxxx/picodrive/assets/31696370/2e263e81-51c8-4daa-ab16-0b2cd5554f84)|![DMA David](https://github.com/irixxxx/picodrive/assets/31696370/fbbeac15-8665-4d3e-9729-d1f8c35e417a)|![Doom Resurrection](https://github.com/irixxxx/picodrive/assets/31696370/db7b7153-b917-4850-8442-a748c2fbb968)|
-| [_MegaDrive: Titan Overdrive 2_](https://www.pouet.net/prod.php?which=69648) | [_MegaDrive: DMA David_](http://www.mode5.net/DMA_David.html) | [_32X: Doom Resurrection_](https://archive.org/details/doom-32x-all-versions) |
-
-| ![Cheril Perils Classics](https://github.com/irixxxx/picodrive/assets/31696370/653914a4-9f90-45f8-bd91-56e784df7550) | ![Stygian Quest](https://github.com/irixxxx/picodrive/assets/31696370/8196801b-85c8-4d84-97e1-ae57ab3d577f) | ![Sword of Stone](https://github.com/irixxxx/picodrive/assets/31696370/3c4a8f40-dad6-4fa4-b188-46b428a4b8c6) |
-| --- | --- | --- |
-| [_SG-1000: Cheril Perils Classic_](https://www.smspower.org/Homebrew/CherilPerilsClassic-SG) | [_MasterSystem: Stygian Quest_](https://www.smspower.org/Homebrew/StygianQuest-SMS) | [_GameGear: The Sword of Stone_](https://www.smspower.org/Homebrew/SwordOfStone-GG) |
-| ![Nyan Cat](https://github.com/irixxxx/picodrive/assets/31696370/6fe0d38b-549d-4faa-9351-b260a89dc745) | ![Anguna the Prison Dungeon](https://github.com/irixxxx/picodrive/assets/31696370/3264b962-7da2-4257-9ff7-1b509bd50cdf) | ![Turrican](https://github.com/irixxxx/picodrive/assets/31696370/c4eb2f2c-806e-4f4b-ac94-5c2cda82e962) |
-| [_SG-1000: Nyan Cat_](https://www.smspower.org/Homebrew/NyanCat-SG) | [_MS: Anguna the Prison Dungeon_](https://www.smspower.org/Homebrew/AngunaThePrisonDungeon-SMS) | [_GameGear: Turrican_](https://www.smspower.org/Homebrew/GGTurrican-GG) |
-
-### Compiling
-
-For platforms where release builds are provided, the simplest method is to
-use the release script `tools/release.sh`. See the script itself for details.
-To create platform builds run the command:
-
-```
-tools/release.sh [version] [platforms...]
-```
-
-This will generate a file for each platform in the `release-[version]` directory.
-A list of supported platforms can be found in the release script.
-
-These commands should create an executable for a unixoid platform not included in the list:
-
-```
-configure --platform=generic
-make
-```
-
-To compile PicoDrive as a libretro core, use this command:
-
-```
-make -f Makefile.libretro
-```
-
-### Helix MP3 decoder for ARM
-
-For 32 bit ARM platforms, the optimized helix MP3 decoder can be used to play
-MP3 audio files with CD games. Due to licensing issues, the helix source files
-cannot be provided here; if you have obtained the sources legally, place them in
-the `platform/common/helix` directory.
-
-To compile the helix sources:
-
-- Set the environment variable `CROSS_COMPILE` to your cross compiler prefix
-(e.g. `arm-linux-gnueabi-`)
-- Set the environment variable `LIBGCC` to your cross compiler's `libgcc.a`
-(e.g. `/usr/lib/gcc-cross/arm-linux-gnueabi/4.7/libgcc.a`)
-- Run the command:
-```
-make -C platform/common/helix CROSS_COMPILE=$CROSS_COMPILE LIBGCC=$LIBGCC
-```
-- Copy the resulting shared library named `${CROSS_COMPILE}helix_mp3.so` as
-`libhelix.so` to the directory containing the PicoDrive binary on the target device.
-
-In addition, helix support must be enabled in PicoDrive itself by compiling with:
-
-```
-make PLATFORM_MP3=1
-```
-
-This switch is enabled automatically for Gamepark Holdings devices (`gp2x`,
-`caanoo` and `wiz`). Without installing `libhelix.so`, these devices will not play
-MP3 audio.
-
-### Installing
-
-The release script produces packages or zip archives which have to be installed
-manually on the target device. Usually this involves unpacking the archive or 
-copying the package to a directory on either the internal device storage or an
-SD card. Device-specific instructions can be found on the internet.
-
-
-Send bug reports, fixes etc. to <derkub@gmail.com>
+Send bug reports, fixes etc to <derkub@gmail.com>

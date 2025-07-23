@@ -1,7 +1,6 @@
 /*
  * PicoDrive
  * (C) notaz, 2010,2011
- * (C) irixxxx, 2023,2024
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.
@@ -13,27 +12,30 @@
 #include "emu.h"
 #include "menu_pico.h"
 #include "input_pico.h"
-#include "keyboard.h"
 #include "version.h"
-
-#include "../libpicofe/plat.h"
 
 #include <pico/pico_int.h>
 #include <pico/patch.h>
 
-#if defined(PANDORA) || defined(__PS2__)
+#ifdef PANDORA
 #define MENU_X2 1
 #else
 #define MENU_X2 0
 #endif
 
-#define COL_ROM PXMAKE(0xbf, 0xbf, 0xff)
-#define COL_OTH PXMAKE(0xaf, 0xff, 0xaf)
+#if defined USE_BGR555
+#define COL_ROM	0x5eff
+#define COL_OTH	0x5ff5
+#elif defined USE_BGR565
+#define COL_ROM	0xfdf7
+#define COL_OTH	0xaff5
+#else
+#define COL_ROM	0xbdff
+#define	COL_OTH	0xaff5
+#endif
 
 // FIXME
-#ifndef REVISION
 #define REVISION "0"
-#endif
 
 static const char *rom_exts[] = {
 	"zip", "bin",
@@ -61,7 +63,7 @@ static unsigned short fname2color(const char *fname)
 		if (strcasecmp(ext, rom_exts[i]) == 0) return COL_ROM;
 	for (i = 0; i < array_size(other_exts); i++)
 		if (strcasecmp(ext, other_exts[i]) == 0) return COL_OTH;
-	return PXMAKE(0xff, 0xff, 0xff);
+	return 0xffff;
 }
 
 #include <platform/libpicofe/menu.c>
@@ -74,8 +76,6 @@ static int menu_w, menu_h;
 #include <platform/gp2x/menu.c>
 #elif defined(__PSP__)
 #include <platform/psp/menu.c>
-#elif defined(__PS2__)
-#include <platform/ps2/menu.c>
 #elif defined(PANDORA)
 #include <platform/pandora/menu.c>
 #else
@@ -89,6 +89,7 @@ static void make_bg(int no_scale, int from_screen)
 	int h = g_menubg_src_h ? g_menubg_src_h : g_screen_height;
 	int pp = g_menubg_src_pp ? g_menubg_src_pp : g_screen_ppitch;
 	short *dst;
+	int x, y;
 
 	if (from_screen) {
 		src = g_screen_ptr;
@@ -103,25 +104,16 @@ static void make_bg(int no_scale, int from_screen)
 
 	if (!no_scale && g_menuscreen_w / w >= 2 && g_menuscreen_h / h >= 2)
 	{
-		int xf = g_menuscreen_w / w, yf = g_menuscreen_h / h;
-		int f = no_scale ? 1 : xf < yf ? xf : yf, xs = f * w, ys = f * h;
-		int x = (g_menuscreen_w - xs)/2, y = (g_menuscreen_h - ys)/2;
-		uint16_t *p = (uint16_t *)g_menubg_ptr;
-		uint16_t *q = (uint16_t *)src;
-
-		int i, j, k, l;
-		p += y * g_menuscreen_pp + x;
-		for (i = 0; i < h; i++) {
-			for (j = 0; j < w; j++, q++) {
-				uint16_t t = (PXMASKH(*q,1)>>1) - (PXMASKH(*q,3)>>3);
-				for (l = 0; l < f; l++)
-					*p++ = t;
-			}
-			p += g_menuscreen_pp - xs;
-			q += pp - w;
-			for (k = 1; k < f; k++) {
-				memcpy(p, p-g_menuscreen_pp, g_menuscreen_w*2);
-				p += g_menuscreen_pp;
+		u32 t, *d = g_menubg_ptr;
+		d += (g_menuscreen_h / 2 - h * 2 / 2)
+			* g_menuscreen_w / 2;
+		d += (g_menuscreen_w / 2 - w * 2 / 2) / 2;
+		for (y = 0; y < h; y++, src += pp, d += g_menuscreen_w*2/2) {
+			for (x = 0; x < w; x++) {
+				t = src[x];
+				t = ((t & 0xf79e)>>1) - ((t & 0xc618)>>3);
+				t |= t << 16;
+				d[x] = d[x + g_menuscreen_w / 2] = t;
 			}
 		}
 		return;
@@ -156,8 +148,6 @@ static void copy_bg(int dir)
 
 static void menu_draw_prep(void)
 {
-	plat_video_menu_update();
-
 	if (menu_w == g_menuscreen_w && menu_h == g_menuscreen_h)
 		return;
 	menu_w = g_menuscreen_w, menu_h = g_menuscreen_h;
@@ -240,8 +230,8 @@ static void cdload_progress_cb(const char *fname, int percent)
 	copy_bg(0);
 	menuscreen_memset_lines(dst, 0xff, me_sfont_h - 2);
 
-	smalltext_out16(1, 3 * me_sfont_h, "Processing CD image / MP3s", PXMAKE(0xff, 0xff, 0xff));
-	smalltext_out16(1, 4 * me_sfont_h, fname, PXMAKE(0xff, 0xff, 0xff));
+	smalltext_out16(1, 3 * me_sfont_h, "Processing CD image / MP3s", 0xffff);
+	smalltext_out16(1, 4 * me_sfont_h, fname, 0xffff);
 	dst += g_menuscreen_pp * me_sfont_h * 3;
 
 	if (len > g_menuscreen_w)
@@ -262,8 +252,8 @@ void menu_romload_prepare(const char *rom_name)
 		p--;
 
 	menu_draw_begin(1, 1);
-	smalltext_out16(1, 1, "Loading", PXMAKE(0xff, 0xff, 0xff));
-	smalltext_out16(1, me_sfont_h, p, PXMAKE(0xff, 0xff, 0xff));
+	smalltext_out16(1, 1, "Loading", 0xffff);
+	smalltext_out16(1, me_sfont_h, p, 0xffff);
 	/* copy menu to bg for callbacks. OK since we are not in menu_loop here */
 	copy_bg(1);
 	menu_draw_end();
@@ -281,7 +271,7 @@ void menu_romload_end(void)
 	menu_draw_begin(0, 1);
 	copy_bg(0);
 	smalltext_out16(1, (cdload_called ? 6 : 3) * me_sfont_h,
-		"Starting emulation...", PXMAKE(0xff, 0xff, 0xff));
+		"Starting emulation...", 0xffff);
 	menu_draw_end();
 }
 
@@ -301,12 +291,12 @@ static void draw_patchlist(int sel)
 		if (pos < 0) continue;
 		if (pos >= max_cnt) break;
 		active = PicoPatches[i].active;
-		smalltext_out16(14,                pos * me_sfont_h, active ? "ON " : "OFF", PXMAKE(0xff, 0xff, active ? 0xff : 0xb0));
-		smalltext_out16(14 + me_sfont_w*4, pos * me_sfont_h, PicoPatches[i].name,    PXMAKE(0xff, 0xff, active ? 0xff : 0xb0));
+		smalltext_out16(14,                pos * me_sfont_h, active ? "ON " : "OFF", active ? 0xfff6 : 0xffff);
+		smalltext_out16(14 + me_sfont_w*4, pos * me_sfont_h, PicoPatches[i].name,    active ? 0xfff6 : 0xffff);
 	}
 	pos = start + i;
 	if (pos < max_cnt)
-		smalltext_out16(14, pos * me_sfont_h, "done", PXMAKE(0xff, 0xff, 0xff));
+		smalltext_out16(14, pos * me_sfont_h, "done", 0xffff);
 
 	text_out16(5, max_cnt / 2 * me_sfont_h, ">");
 	menu_draw_end();
@@ -361,29 +351,24 @@ me_bind_action me_ctrl_actions[] =
 
 me_bind_action emuctrl_actions[] =
 {
-	{ "Load State     ", PEV_STATE_LOAD },
-	{ "Save State     ", PEV_STATE_SAVE },
-	{ "Prev Save Slot ", PEV_SSLOT_PREV },
-	{ "Next Save Slot ", PEV_SSLOT_NEXT },
-	{ "Switch Renderer", PEV_SWITCH_RND },
-	{ "Volume Down    ", PEV_VOL_DOWN },
-	{ "Volume Up      ", PEV_VOL_UP },
-	{ "Fast forward   ", PEV_FF },
-	{ "Reset Game     ", PEV_RESET },
-	{ "Enter Menu     ", PEV_MENU },
-	{ "Pico Prev page ", PEV_PICO_PPREV },
-	{ "Pico Next page ", PEV_PICO_PNEXT },
-	{ "Pico Storyware ", PEV_PICO_STORY },
-	{ "Pico Pad       ", PEV_PICO_PAD },
-	{ "Switch Keyboard", PEV_SWITCH_KBD },
-	{ "Capture Mouse  ", PEV_GRAB_INPUT },
+	{ "Load State       ", PEV_STATE_LOAD },
+	{ "Save State       ", PEV_STATE_SAVE },
+	{ "Prev Save Slot   ", PEV_SSLOT_PREV },
+	{ "Next Save Slot   ", PEV_SSLOT_NEXT },
+	{ "Switch Renderer  ", PEV_SWITCH_RND },
+	{ "Volume Down      ", PEV_VOL_DOWN },
+	{ "Volume Up        ", PEV_VOL_UP },
+	{ "Fast forward     ", PEV_FF },
+	{ "Reset Game       ", PEV_RESET },
+	{ "Enter Menu       ", PEV_MENU },
+	{ "Pico Next page   ", PEV_PICO_PNEXT },
+	{ "Pico Prev page   ", PEV_PICO_PPREV },
+	{ "Pico Switch input", PEV_PICO_SWINP },
 	{ NULL,                0 }
 };
 
 static int key_config_loop_wrap(int id, int keys)
 {
-	int n;
-
 	switch (id) {
 		case MA_CTRL_PLAYER1:
 			key_config_loop(me_ctrl_actions, array_size(me_ctrl_actions) - 1, 0);
@@ -398,8 +383,7 @@ static int key_config_loop_wrap(int id, int keys)
 			key_config_loop(me_ctrl_actions, array_size(me_ctrl_actions) - 1, 3);
 			break;
 		case MA_CTRL_EMU:
-			n = (plat_has_wm() ? 1 : 2);
-			key_config_loop(emuctrl_actions, array_size(emuctrl_actions) - n, -1);
+			key_config_loop(emuctrl_actions, array_size(emuctrl_actions) - 1, -1);
 			break;
 		default:
 			break;
@@ -425,279 +409,27 @@ static const char *mgn_dev_name(int id, int *offs)
 	return name;
 }
 
-static void kbd_draw(struct key *desc[], int shift, int xoffs, int yoffs, struct key *hi)
-{
-	int i, j;
-	struct key *key;
+static int mh_saveloadcfg(int id, int keys);
+static const char *mgn_saveloadcfg(int id, int *offs);
 
-	if (g_menuscreen_w >= (MENU_X2 ? 960 : 480))
-		xoffs -= 50;
-	for (i = 0; desc[i]; i++) {
-		for (j = 0, key = &desc[i][j]; key->lower; j++, key++) {
-			int color = (key != hi ? PXMAKE(0xa0, 0xa0, 0xa0) :
-						 PXMAKE(0xff, 0xff, 0xff));
-			char *text = (shift ? key->upper : key->lower);
-			if (g_menuscreen_w >= (MENU_X2 ? 960 : 480))
-			text_out16_(xoffs + key->xpos*me_mfont_w, yoffs + i*me_mfont_h, text, color);
-			else
-			smalltext_out16(xoffs + key->xpos*me_sfont_w, yoffs + i*me_sfont_h, text, color);
-		}
-	}
-}
+const char *indev0_names[] = { "none", "3 button pad", "6 button pad", "Team player", "4 way play", NULL };
+const char *indev1_names[] = { "none", "3 button pad", "6 button pad", NULL };
 
-int key_config_kbd_loop(int id, int keys)
-{
-	struct key **kbd = kbd_pico;
-	int keyx = 0, keyy = 0, shift = 0, toggle = 0;
-	char mok[20], ma2[20], r[20], l[20];
-	int inp;
-	int dev;
-
-	int w = 20 * me_mfont_w / 2;
-	int x = g_menuscreen_w / 2;
-
-	struct key *key;
-	const int *binds;
-	int bc;
-
-	snprintf(mok, sizeof(mok), "%s", in_get_key_name(-1, -PBTN_MOK));
-	snprintf(ma2, sizeof(ma2), "%s", in_get_key_name(-1, -PBTN_MA2));
-	snprintf(r, sizeof(r), "%s", in_get_key_name(-1, -PBTN_R));
-	snprintf(l, sizeof(r), "%s", in_get_key_name(-1, -PBTN_L));
-
-	for (dev = 0; dev < IN_MAX_DEVS-1; dev++)
-		if ((binds = in_get_dev_kbd_binds(dev))) break;
-
-	while (in_menu_wait_any(NULL, 50) & (PBTN_MOK|PBTN_MBACK|PBTN_MENU))
-		;
-
-	for (;;) {
-		key = &kbd[keyy][keyx];
-		in_get_config(dev, IN_CFG_BIND_COUNT, &bc);
-		for (bc--; bc >= 0 && binds[bc] != key->key; bc--) ;
-
-		menu_draw_begin(1, 0);
-		text_out16(x - w, 2 * me_mfont_h, "Keyboard type: %s", toggle ? "SC-3000" : "Pico");
-		kbd_draw(kbd, shift, (g_menuscreen_w - 320)/2, 4 * me_mfont_h, key);
-		text_out16(x - 2*w, g_menuscreen_h - 7 * me_mfont_h, "currently bound to %s",
-				bc >= 0 ? in_get_key_name(-1, bc) : "nothing");
-		if (!shift)
-			text_out16(x - 2*w, g_menuscreen_h - 5 * me_mfont_h, "%s - bind, %s - clear", mok, ma2);
-		text_out16(x - 2*w, g_menuscreen_h - 4 * me_mfont_h, "%s - swap type, %s - shift view", r, l);
-		menu_draw_end();
-
-		inp = in_menu_wait(PBTN_UP|PBTN_DOWN|PBTN_LEFT|PBTN_RIGHT|PBTN_MA2|
-			PBTN_MOK|PBTN_MBACK|PBTN_MENU|PBTN_L|PBTN_R, NULL, 70);
-		if (inp & (PBTN_MENU|PBTN_MBACK))
-			break;
-
-		if (inp & PBTN_UP) {
-			if (--keyy < 0) while (kbd[keyy+1]) keyy++;
-			keyx = vkbd_find_xpos(kbd[keyy], key->xpos);
-		}
-		if (inp & PBTN_DOWN) {
-			if (kbd[++keyy] == NULL) keyy = 0;
-			keyx = vkbd_find_xpos(kbd[keyy], key->xpos);
-		}
-		if (inp & PBTN_LEFT) {
-			if (--keyx < 0) while (kbd[keyy][keyx+1].lower) keyx++;
-		}
-		if (inp & PBTN_RIGHT) {
-			if (kbd[keyy][++keyx].lower == NULL) keyx = 0;
-		}
-		if (inp & PBTN_L) {
-			shift = !shift;
-		}
-		if (inp & PBTN_R) {
-			toggle = !toggle;
-			kbd = (toggle ? kbd_sc3000 : kbd_pico);
-			keyx = vkbd_find_xpos(kbd[keyy], key->xpos);
-		}
-
-		if (inp & PBTN_MOK) {
-			int is_down, bind_dev_id, kc;
-
-			while (in_menu_wait_any(NULL, 30) & PBTN_MOK)
-				;
-			if (shift) continue;
-
-			key = &kbd[keyy][keyx];
-			menu_draw_begin(1, 0);
-			text_out16(x - w, 2 * me_mfont_h, "Keyboard type: %s", toggle ? "SC-3000" : "Pico");
-			kbd_draw(kbd, shift, (g_menuscreen_w - 320)/2, 4 * me_mfont_h, key);
-			text_out16(x - 2*w, g_menuscreen_h - 4 * me_mfont_h, "Press a button to bind/unbind");
-			menu_draw_end();
-
-			/* wait for some up event */
-			for (is_down = 1; is_down; )
-				kc = in_update_keycode(&bind_dev_id, &is_down, NULL, -1);
-
-			in_bind_kbd_key(dev, bc, 0);
-			in_bind_kbd_key(bind_dev_id, kc, kbd[keyy][keyx].key);
-		}
-		if (inp & PBTN_MA2) {
-			in_bind_kbd_key(dev, bc, 0);
-		}
-	}
-
-	return 0;
-}
-
-
-const char *indev_names[] = { "none", "3 button pad", "6 button pad", "Mouse", "Light gun", "Justifier", "Team player", "4 way play", NULL };
-
-static char h_play12[55];
-static char h_play34[] = "Works only for Mega Drive/CD/32X games having\n"
-				"support for Team player, 4 way play, or J-cart";
-static char h_gun[]    = "Light Phaser for SMS, Menacer for Mega Drive\n"
-				"note: Justifier can only be selected on input 2";
-
-static char player[] = "Player 1";
-
-static const char *mgn_nothing(int id, int *offs)
-{
-	return "";
-}
-
-static int key_config_players(int id, int keys)
-{
-	int x = me_id2offset(e_menu_keyconfig, MA_CTRL_PLAYER1);
-	int pid = player[strlen(player)-1] - '0';
-
-	if (keys & PBTN_LEFT)
-		if (--pid < 1) pid = 4;
-	if (keys & PBTN_RIGHT)
-		if (++pid > 4) pid = 1;
-
-	player[strlen(player)-1] = pid + '0';
-	e_menu_keyconfig[x].help = (pid >= 3 ? h_play34 : h_play12);
-
-	if (keys & PBTN_MOK)
-		key_config_loop(me_ctrl_actions, array_size(me_ctrl_actions) - 1, pid-1);
-
-	return 0;
-}
-
-static const char *mgn_keyboard(int id, int *offs)
-{
-	static const char *kbds[] = { "OFF", "virtual", "physical" };
-	const char *kbd = kbds[currentConfig.keyboard];
-	if (currentConfig.keyboard < 0 || currentConfig.keyboard > 2)
-		kbd = kbds[0];
-	*offs = 3-strlen(kbd);
-	return kbd;
-}
-
-static int key_config_keyboard(int id, int keys)
-{
-	int kid = currentConfig.keyboard;
-#ifdef USE_SDL	// TODO this info should come from platform!
-	int k = 2;
-#else
-	int k = 1;
-#endif
-
-	if (keys & PBTN_LEFT)
-		if (--kid < 0) kid = k;
-	if (keys & PBTN_RIGHT)
-		if (++kid > k) kid = 0;
-
-	currentConfig.keyboard = kid;
-
-	me_enable(e_menu_keyconfig, MA_CTRL_KEYBOARD, currentConfig.keyboard == 2);
-
-	return 0;
-}
-
-static const char *mgn_indev(int id, int *offs)
-{
-	const char *dev;
-	if (id == MA_OPT_INPUT_DEV0)
-		dev = indev_names[currentConfig.input_dev0];
-	else	dev = indev_names[currentConfig.input_dev1];
-	*offs = 3-strlen(dev);
-	return dev;
-}
-
-static int mh_indev(int id, int keys)
-{
-	int is0 = id == MA_OPT_INPUT_DEV0;
-	int *indev = is0 ? &currentConfig.input_dev0 : &currentConfig.input_dev1;
-	int x = me_id2offset(e_menu_keyconfig, MA_OPT_INPUT_DEV0);
-
-	if (keys & PBTN_RIGHT) {
-		(*indev) ++;
-#ifdef USE_SDL	// TODO this info should come from platform!
-		// Justifier only in pad port 2
-		if (is0 && *indev == PICO_INPUT_JUSTIFIER)
-			(*indev) ++;
-		// Team/4way only in pad port 1
-		if (!is0 && *indev > PICO_INPUT_JUSTIFIER)
-			(*indev) --;
-#else
-		while (*indev >= PICO_INPUT_MOUSE && *indev <= PICO_INPUT_JUSTIFIER)
-			(*indev) ++;
-		// Team/4way only in pad port 1
-		while (!is0 && *indev >= PICO_INPUT_MOUSE)
-			(*indev) --;
-#endif
-		if (*indev >= PICO_INPUT_COUNT)
-			(*indev) --;
-	}
-	if (keys & PBTN_LEFT) {
-		(*indev) --;
-#ifdef USE_SDL	// TODO this info should come from platform!
-		if (is0 && *indev == PICO_INPUT_JUSTIFIER)
-			(*indev) --;
-#else
-		while (*indev >= PICO_INPUT_MOUSE && *indev <= PICO_INPUT_JUSTIFIER)
-			(*indev) --;
-#endif
-		if (*indev < 0)
-			(*indev) ++;
-	}
-	if (*indev == PICO_INPUT_LIGHT_GUN)
-		e_menu_keyconfig[x + !is0].help = h_gun;
-	else	e_menu_keyconfig[x + !is0].help = NULL;
-
-	x = currentConfig.input_dev0 == PICO_INPUT_LIGHT_GUN ||
-		currentConfig.input_dev1 == PICO_INPUT_LIGHT_GUN ||
-		currentConfig.input_dev1 == PICO_INPUT_JUSTIFIER;
-	me_enable(e_menu_keyconfig, MA_CTRL_LIGHTGUN, x);
-	return 0;
-}
-
-static menu_entry e_menu_gunconfig[] =
-{
-	mee_onoff     ("Gun crosshair",     MA_CTRL_GUN_CURSOR, currentConfig.EmuOpt, EOPT_GUN_CURSOR),
-	mee_range     ("Gun x offset",      MA_CTRL_GUN_XOFFS,currentConfig.gunx, -50, 50),
-	mee_range     ("Gun y offset",      MA_CTRL_GUN_YOFFS,currentConfig.guny, -50, 50),
-	mee_end,
-};
-
-static int gun_config_loop(int id, int keys)
-{
-	static int sel = 0;
-
-	me_loop_d(e_menu_gunconfig, &sel, menu_draw_prep, NULL);
-
-	PicoIn.gunx = currentConfig.gunx;
-	PicoIn.guny = currentConfig.guny;
-
-	return 0;
-}
+static char h_play34[] = "only for MD(+add-ons) with Team/4 way";
 
 static menu_entry e_menu_keyconfig[] =
 {
-	mee_cust_nosave(player,             MA_CTRL_PLAYER1,    key_config_players, mgn_nothing),
-	mee_handler_id("Emulator hotkeys",  MA_CTRL_EMU,        key_config_loop_wrap),
-	mee_cust_h    ("Keyboard",          MA_OPT_KEYBOARD,    key_config_keyboard, mgn_keyboard, NULL),
-	mee_handler_id("Keys configuration",MA_CTRL_KEYBOARD,   key_config_kbd_loop),
-	mee_cust_h    ("Input device 1",    MA_OPT_INPUT_DEV0,  mh_indev, mgn_indev, NULL),
-	mee_cust_h    ("Input device 2",    MA_OPT_INPUT_DEV1,  mh_indev, mgn_indev, NULL),
+	mee_handler_id("Player 1",          MA_CTRL_PLAYER1,    key_config_loop_wrap),
+	mee_handler_id("Player 2",          MA_CTRL_PLAYER2,    key_config_loop_wrap),
+	mee_handler_id_h("Player 3",        MA_CTRL_PLAYER3,    key_config_loop_wrap, h_play34),
+	mee_handler_id_h("Player 4",        MA_CTRL_PLAYER4,    key_config_loop_wrap, h_play34),
+	mee_handler_id("Emulator controls", MA_CTRL_EMU,        key_config_loop_wrap),
+	mee_enum      ("Input device 1",    MA_OPT_INPUT_DEV0,  currentConfig.input_dev0, indev0_names),
+	mee_enum      ("Input device 2",    MA_OPT_INPUT_DEV1,  currentConfig.input_dev1, indev1_names),
 	mee_range     ("Turbo rate",        MA_CTRL_TURBO_RATE, currentConfig.turbo_rate, 1, 30),
 	mee_range     ("Analog deadzone",   MA_CTRL_DEADZONE,   currentConfig.analog_deadzone, 1, 99),
-	mee_handler_id("Gun configuration", MA_CTRL_LIGHTGUN,   gun_config_loop),
+	mee_cust_nosave("Save global config",       MA_OPT_SAVECFG, mh_saveloadcfg, mgn_saveloadcfg),
+	mee_cust_nosave("Save cfg for loaded game", MA_OPT_SAVECFG_GAME, mh_saveloadcfg, mgn_saveloadcfg),
 	mee_label     (""),
 	mee_label     ("Input devices:"),
 	mee_label_mk  (MA_CTRL_DEV_FIRST, mgn_dev_name),
@@ -713,29 +445,8 @@ static menu_entry e_menu_keyconfig[] =
 static int menu_loop_keyconfig(int id, int keys)
 {
 	static int sel = 0;
-	int it = 0, x = me_id2offset(e_menu_keyconfig, MA_CTRL_DEV_FIRST);
 
-	while (in_get_dev_name(it, 1, 1))
-		it++;
-	for (it += x; x && e_menu_keyconfig[x].name; x++)
-		e_menu_keyconfig[x].enabled = x < it;
-
-	char l[20], r[20];
-	snprintf(l,sizeof(l),"%s", in_get_key_name(-1, -PBTN_LEFT));
-	snprintf(r,sizeof(r),"%s", in_get_key_name(-1, -PBTN_RIGHT));
-	snprintf(h_play12, sizeof(h_play12), "%s/%s - select, %s - configure", l, r, in_get_key_name(-1, -PBTN_MOK));
-
-	player[strlen(player)-1] = '1';
-	x = me_id2offset(e_menu_keyconfig, MA_CTRL_PLAYER1);
-	e_menu_keyconfig[x].help = h_play12;
-
-	me_enable(e_menu_keyconfig, MA_CTRL_KEYBOARD, currentConfig.keyboard == 2);
-
-	x = currentConfig.input_dev0 == PICO_INPUT_LIGHT_GUN ||
-		currentConfig.input_dev1 == PICO_INPUT_LIGHT_GUN ||
-		currentConfig.input_dev1 == PICO_INPUT_JUSTIFIER;
-	me_enable(e_menu_keyconfig, MA_CTRL_LIGHTGUN, x);
-
+	me_enable(e_menu_keyconfig, MA_OPT_SAVECFG_GAME, PicoGameLoaded);
 	me_loop_d(e_menu_keyconfig, &sel, menu_draw_prep, NULL);
 
 	PicoSetInputDevice(0, currentConfig.input_dev0);
@@ -746,30 +457,21 @@ static int menu_loop_keyconfig(int id, int keys)
 
 // ------------ MD options menu ------------
 
-static const char h_renderer[] = "16bit is more accurate, 8bit is faster";
-static const char h_fmsound[]  = "Disabling improves performance, but breaks sound";
-static const char h_dacnoise[] = "FM chips in the 1st Mega Drive model have DAC noise,\n"
-				"newer models used different chips without this";
-static const char h_fmfilter[] = "Improves sound accuracy but is noticeably slower,\n"
-				"best quality if native rate isn't working";
-static const char h_picopen[]  = "Enabling resets Pico display and d-pad input back to\n"
-				"screen if the Pico pen button is pressed";
+static const char h_fmfilter[] = "improves sound quality but is noticeably slower\n"
+				"best option if native rate isn't working";
 
 static menu_entry e_menu_md_options[] =
 {
-	mee_enum_h    ("Renderer",                  MA_OPT_RENDERER, currentConfig.renderer, renderer_names, h_renderer),
-	mee_onoff_h   ("FM audio",                  MA_OPT2_ENABLE_YM2612, PicoIn.opt, POPT_EN_FM, h_fmsound),
-	mee_onoff_h   ("FM filter",                 MA_OPT_FM_FILTER, PicoIn.opt, POPT_EN_FM_FILTER, h_fmfilter),
-	mee_onoff_h   ("FM DAC noise",              MA_OPT2_ENABLE_YM_DAC, PicoIn.opt, POPT_EN_FM_DAC, h_dacnoise),
-	mee_onoff_h   ("Pen button shows screen",   MA_OPT_PICO_PEN, currentConfig.EmuOpt, EOPT_PICO_PEN, h_picopen),
+	mee_enum      ("Renderer",        MA_OPT_RENDERER, currentConfig.renderer, renderer_names),
+	mee_onoff_h   ("FM filtering",    MA_OPT_FM_FILTER, PicoIn.opt, POPT_EN_FM_FILTER, h_fmfilter),
 	mee_end,
 };
 
 static int menu_loop_md_options(int id, int keys)
 {
 	static int sel = 0;
-	if (renderer_names[0] == NULL)
-		me_enable(e_menu_md_options, MA_OPT_RENDERER, 0);
+
+	me_enable(e_menu_md_options, MA_OPT_RENDERER, renderer_names[0] != NULL);
 	me_loop_d(e_menu_md_options, &sel, menu_draw_prep, NULL);
 
 	return 0;
@@ -782,13 +484,16 @@ static const char h_cdda[]   = "Play audio tracks from mp3s/wavs/bins";
 static const char h_cdpcm[]  = "Emulate PCM audio chip for effects/voices/music";
 static const char h_srcart[] = "Emulate the save RAM cartridge accessory\n"
 				"most games don't need this";
+static const char h_scfx[]   = "Emulate scale/rotate ASIC chip for graphics effects\n"
+				"disable to improve performance";
 
 static menu_entry e_menu_cd_options[] =
 {
-	mee_onoff_h("SaveRAM cart",         MA_CDOPT_SAVERAM,       PicoIn.opt, POPT_EN_MCD_RAMCART, h_srcart),
 	mee_onoff_h("CD LEDs",              MA_CDOPT_LEDS,          currentConfig.EmuOpt, EOPT_EN_CD_LEDS, h_cdleds),
 	mee_onoff_h("CDDA audio",           MA_CDOPT_CDDA,          PicoIn.opt, POPT_EN_MCD_CDDA, h_cdda),
 	mee_onoff_h("PCM audio",            MA_CDOPT_PCM,           PicoIn.opt, POPT_EN_MCD_PCM, h_cdpcm),
+	mee_onoff_h("SaveRAM cart",         MA_CDOPT_SAVERAM,       PicoIn.opt, POPT_EN_MCD_RAMCART, h_srcart),
+	mee_onoff_h("Scale/Rot. fx",        MA_CDOPT_SCALEROT_CHIP, PicoIn.opt, POPT_EN_MCD_GFX, h_scfx),
 	mee_end,
 };
 
@@ -819,8 +524,6 @@ static int mh_opt_sh2cycles(int id, int keys)
 	else if (*khz > 0x7fffffff / 1000)
 		*khz = 0x7fffffff / 1000;
 
-	Pico32xSetClocks(currentConfig.msh2_khz * 1000, currentConfig.ssh2_khz * 1000);
-
 	return 0;
 }
 
@@ -833,14 +536,21 @@ static const char *mgn_opt_sh2cycles(int id, int *offs)
 	return static_buff;
 }
 
+static const char h_32x_enable[] = "Enable emulation of the 32X addon";
 static const char h_pwm[]        = "Disabling may improve performance, but break sound";
 static const char h_pwmopt[]     = "Enabling may improve performance, but break sound";
+static const char h_sh2cycles[]  = "Cycles/millisecond (similar to DOSBox)\n"
+				   "lower values speed up emulation but break games\n"
+				   "at least 11000 recommended for compatibility";
 
 static menu_entry e_menu_32x_options[] =
 {
+	mee_onoff_h   ("32X enabled",       MA_32XOPT_ENABLE_32X,  PicoIn.opt, POPT_EN_32X, h_32x_enable),
 	mee_enum      ("32X renderer",      MA_32XOPT_RENDERER,    currentConfig.renderer32x, renderer_names32x),
-	mee_onoff_h   ("PWM audio",         MA_32XOPT_PWM,         PicoIn.opt, POPT_EN_PWM, h_pwm),
+	mee_onoff_h   ("PWM sound",         MA_32XOPT_PWM,         PicoIn.opt, POPT_EN_PWM, h_pwm),
 	mee_onoff_h   ("PWM IRQ optimization", MA_OPT2_PWM_IRQ_OPT, PicoIn.opt, POPT_PWM_IRQ_OPT, h_pwmopt),
+	mee_cust_h    ("Master SH2 cycles", MA_32XOPT_MSH2_CYCLES, mh_opt_sh2cycles, mgn_opt_sh2cycles, h_sh2cycles),
+	mee_cust_h    ("Slave SH2 cycles",  MA_32XOPT_SSH2_CYCLES, mh_opt_sh2cycles, mgn_opt_sh2cycles, h_sh2cycles),
 	mee_end,
 };
 
@@ -848,9 +558,10 @@ static int menu_loop_32x_options(int id, int keys)
 {
 	static int sel = 0;
 
-	if (renderer_names32x[0] == NULL)
-		me_enable(e_menu_32x_options, MA_32XOPT_RENDERER, 0);
+	me_enable(e_menu_32x_options, MA_32XOPT_RENDERER, renderer_names32x[0] != NULL);
 	me_loop_d(e_menu_32x_options, &sel, menu_draw_prep, NULL);
+
+	Pico32xSetClocks(currentConfig.msh2_khz * 1000, currentConfig.msh2_khz * 1000);
 
 	return 0;
 }
@@ -861,24 +572,18 @@ static int menu_loop_32x_options(int id, int keys)
 
 #ifndef NO_SMS
 
-static const char *sms_hardwares[] = { "auto", "Game Gear", "Master System", "SG-1000", "SC-3000", NULL };
+static const char *sms_hardwares[] = { "auto", "Game Gear", "Master System", "SG-1000", NULL };
 static const char *gg_ghosting_opts[] = { "OFF", "weak", "normal", NULL };
-static const char *sms_mappers[] = { "auto", "Sega", "Codemasters", "Korea", "Korea MSX", "Korea X-in-1", "Korea 4-Pak", "Korea Janggun", "Korea Nemesis", "Taiwan 8K RAM", "Korea XOR", "Sega 32K RAM", NULL };
-static const char *sms_tmspalette[] = { "SMS", "SG-1000", NULL };
-
-static const char h_smsfm[] = "FM sound is only supported by few games,\n"
-				"some games may crash with FM enabled";
-static const char h_ghost[] = "Simulate the inertia of the GG LCD display";
-static const char h_smspal[] = "Selects the color palette used for SMS games\n"
-				"using the original TMS9918 graphics modes";
+static const char *sms_mappers[] = { "auto", "Sega", "Codemasters", "Korea", "Korea MSX", "Korea X-in-1", "Korea 4-Pak", "Korea Janggun", "Korea Nemesis", "Taiwan 8K RAM", "Korea XOR", NULL };
+static const char h_smsfm[] = "FM sound is only supported by few games\nOther games may crash with FM enabled";
+static const char h_ghost[] = "simulates the inertia of the GG LCD display";
 
 static menu_entry e_menu_sms_options[] =
 {
 	mee_enum      ("System",            MA_SMSOPT_HARDWARE, PicoIn.hwSelect, sms_hardwares),
-	mee_enum      ("Cartridge mapping", MA_SMSOPT_MAPPER, PicoIn.mapper, sms_mappers),
 	mee_enum_h    ("Game Gear LCD ghosting", MA_SMSOPT_GHOSTING, currentConfig.ghosting, gg_ghosting_opts, h_ghost),
 	mee_onoff_h   ("FM Sound Unit",     MA_OPT2_ENABLE_YM2413, PicoIn.opt, POPT_EN_YM2413, h_smsfm),
-	mee_enum_h    ("SMS palette in TMS mode", MA_SMSOPT_TMSPALETTE, PicoIn.tmsPalette, sms_tmspalette, h_smspal),
+	mee_enum      ("Cartridge mapping", MA_SMSOPT_MAPPER, PicoIn.mapper, sms_mappers),
 	mee_end,
 };
 
@@ -895,23 +600,21 @@ static int menu_loop_sms_options(int id, int keys)
 
 // ------------ adv options menu ------------
 
-static const char h_gglcd[] = "Show full VDP image with borders if disabled";
 static const char h_ovrclk[] = "Will break some games, keep at 0";
-static const char h_dynarec[] = "Disabling dynarecs massively slows down 32X";
-static const char h_sh2cycles[]  = "Cycles/millisecond (similar to DOSBox)\n"
-				   "lower values speed up emulation but break games\n"
-				   "at least 11000 recommended for compatibility";
 
 static menu_entry e_menu_adv_options[] =
 {
-	mee_onoff     ("Disable frame limiter",    MA_OPT2_NO_FRAME_LIMIT,currentConfig.EmuOpt, EOPT_NO_FRMLIMIT),
 	mee_onoff     ("Disable sprite limit",     MA_OPT2_NO_SPRITE_LIM, PicoIn.opt, POPT_DIS_SPRITE_LIM),
-	mee_onoff     ("Disable idle loop patching",MA_OPT2_NO_IDLE_LOOPS,PicoIn.opt, POPT_DIS_IDLE_DET),
-	mee_onoff_h   ("Emulate Game Gear LCD",    MA_OPT2_ENABLE_GGLCD  ,PicoIn.opt, POPT_EN_GG_LCD, h_gglcd),
 	mee_range_h   ("Overclock M68k (%)",       MA_OPT2_OVERCLOCK_M68K,currentConfig.overclock_68k, 0, 1000, h_ovrclk),
-	mee_onoff_h   ("Enable dynarecs",          MA_OPT2_DYNARECS,      PicoIn.opt, POPT_EN_DRC, h_dynarec),
-	mee_cust_h    ("Master SH2 cycles",        MA_32XOPT_MSH2_CYCLES, mh_opt_sh2cycles, mgn_opt_sh2cycles, h_sh2cycles),
-	mee_cust_h    ("Slave SH2 cycles",         MA_32XOPT_SSH2_CYCLES, mh_opt_sh2cycles, mgn_opt_sh2cycles, h_sh2cycles),
+	mee_onoff     ("Emulate Z80",              MA_OPT2_ENABLE_Z80,    PicoIn.opt, POPT_EN_Z80),
+	mee_onoff     ("Emulate YM2612 (FM)",      MA_OPT2_ENABLE_YM2612, PicoIn.opt, POPT_EN_FM),
+	mee_onoff     ("Disable YM2612 SSG-EG",    MA_OPT2_DISABLE_YM_SSG,PicoIn.opt, POPT_DIS_FM_SSGEG),
+	mee_onoff     ("Enable YM2612 DAC noise",  MA_OPT2_ENABLE_YM_DAC, PicoIn.opt, POPT_EN_FM_DAC),
+	mee_onoff     ("Emulate SN76496 (PSG)",    MA_OPT2_ENABLE_SN76496,PicoIn.opt, POPT_EN_PSG),
+	mee_onoff     ("Emulate Game Gear LCD",    MA_OPT2_ENABLE_GGLCD  ,PicoIn.opt, POPT_EN_GG_LCD),
+	mee_onoff     ("Disable idle loop patching",MA_OPT2_NO_IDLE_LOOPS,PicoIn.opt, POPT_DIS_IDLE_DET),
+	mee_onoff     ("Disable frame limiter",    MA_OPT2_NO_FRAME_LIMIT,currentConfig.EmuOpt, EOPT_NO_FRMLIMIT),
+	mee_onoff     ("Enable dynarecs",          MA_OPT2_DYNARECS,      PicoIn.opt, POPT_EN_DRC),
 	MENU_OPTIONS_ADV
 	mee_end,
 };
@@ -930,12 +633,10 @@ static int menu_loop_adv_options(int id, int keys)
 
 static int sndrate_prevnext(int rate, int dir)
 {
-	const int *rates = plat_target.sound_rates;
-	int rate_count;
+	static const int rates[] = { 8000, 11025, 16000, 22050, 44100, 53000 };
+	int rate_count = sizeof(rates)/sizeof(rates[0]);
 	int i;
 
-	for (rate_count = 0; rates[rate_count] != -1; rate_count++)
-		;
 	for (i = 0; i < rate_count; i++)
 		if (rates[i] == rate) break;
 
@@ -992,19 +693,16 @@ static const char *mgn_opt_alpha(int id, int *offs)
 	return static_buff;
 }
 
-static const char h_ensound[] = "Disabling turns off sound output, however all\n"
-				"enabled sound components are still emulated";
-static const char h_quality[] = "native: Mega Drive FM hardware rate (~53000Hz),\n"
-				"best quality, but may not work on some devices";
+static const char h_quality[] = "native is the Megadrive sound chip rate (~53000),\n"
+				"best quality, but might not work on some devices";
 static const char h_lowpass[] = "Low pass filter for sound closer to real hardware";
-static const char h_lpalpha[] = "Higher values have more impact";
 
 static menu_entry e_menu_snd_options[] =
 {
-	mee_onoff_h   ("Enable sound",    MA_OPT_ENABLE_SOUND,  currentConfig.EmuOpt, EOPT_EN_SOUND, h_ensound),
-	mee_cust_h    ("Sound quality",   MA_OPT_SOUND_QUALITY, mh_opt_snd, mgn_opt_sound, h_quality),
+	mee_onoff     ("Enable sound",    MA_OPT_ENABLE_SOUND,  currentConfig.EmuOpt, EOPT_EN_SOUND),
+	mee_cust_h    ("Sound Quality",   MA_OPT_SOUND_QUALITY, mh_opt_snd, mgn_opt_sound, h_quality),
 	mee_onoff_h   ("Sound filter",    MA_OPT_SOUND_FILTER,  PicoIn.opt, POPT_EN_SNDFILTER, h_lowpass),
-	mee_cust_h    ("Filter strength", MA_OPT_SOUND_ALPHA,   mh_opt_alpha, mgn_opt_alpha, h_lpalpha),
+	mee_cust      ("Filter strength", MA_OPT_SOUND_ALPHA,   mh_opt_alpha, mgn_opt_alpha),
 	mee_end,
 };
 
@@ -1066,8 +764,8 @@ static const char h_confirm_save[]    = "Ask for confirmation when overwriting s
 static menu_entry e_menu_ui_options[] =
 {
 	mee_onoff     ("Show FPS",                 MA_OPT_SHOW_FPS,       currentConfig.EmuOpt, EOPT_SHOW_FPS),
-	mee_enum_h    ("Confirm save/load",        MA_OPT_CONFIRM_STATES, currentConfig.confirm_save, men_confirm_save, h_confirm_save),
-	mee_onoff     ("Don't save last used game", MA_OPT2_NO_LAST_ROM,  currentConfig.EmuOpt, EOPT_NO_AUTOSVCFG),
+	mee_enum_h    ("Confirm savestate",        MA_OPT_CONFIRM_STATES, currentConfig.confirm_save, men_confirm_save, h_confirm_save),
+	mee_onoff     ("Don't save last used ROM", MA_OPT2_NO_LAST_ROM,   currentConfig.EmuOpt, EOPT_NO_AUTOSVCFG),
 	mee_end,
 };
 
@@ -1082,73 +780,7 @@ static int menu_loop_ui_options(int id, int keys)
 
 // ------------ options menu ------------
 
-static int find_renderer(const char *names[], const char *which)
-{
-	int i = 0;
-	for (i = 0; *names; names++, i++)
-		if (strstr(*names, which)) return i;
-	return 0;
-}
-
-static int mh_profile(int id, int keys) {
-	switch (id) {
-	case MA_PROFILE_ACCURATE:
-		currentConfig.renderer = find_renderer(renderer_names, "16bit");
-		currentConfig.renderer32x = find_renderer(renderer_names32x, "accurate");
-		PicoIn.sndRate = 44100;
-		PicoIn.opt |= POPT_EN_FM_FILTER | POPT_EN_FM | POPT_EN_MCD_CDDA;
-		PicoIn.opt &= ~POPT_PWM_IRQ_OPT;
-		break;
-	case MA_PROFILE_BALANCED:
-		currentConfig.renderer = find_renderer(renderer_names, "8bit");
-		currentConfig.renderer32x = find_renderer(renderer_names32x, "fast");
-		PicoIn.sndRate = 44100;
-		PicoIn.opt |= POPT_EN_FM | POPT_EN_MCD_CDDA;
-		PicoIn.opt &= ~(POPT_PWM_IRQ_OPT | POPT_EN_FM_FILTER);
-		break;
-	case MA_PROFILE_FAST:
-		currentConfig.renderer = find_renderer(renderer_names, "fast");
-		currentConfig.renderer32x = find_renderer(renderer_names32x, "fastest");
-		PicoIn.sndRate = 22050;
-		PicoIn.opt |= POPT_PWM_IRQ_OPT | POPT_EN_FM | POPT_EN_MCD_CDDA;
-		PicoIn.opt &= ~POPT_EN_FM_FILTER;
-		break;
-	case MA_PROFILE_BREAKING:
-		currentConfig.renderer = find_renderer(renderer_names, "fast");
-		currentConfig.renderer32x = find_renderer(renderer_names32x, "fastest");
-		PicoIn.sndRate = 16000;
-		PicoIn.opt |= POPT_PWM_IRQ_OPT;
-		PicoIn.opt &= ~(POPT_EN_FM_FILTER | POPT_EN_FM | POPT_EN_MCD_CDDA);
-		break;
-	}
-	return 1;
-}
-
-static menu_entry e_menu_profile[] =
-{
-	mee_label     ("Select option profile and press OK:"),
-	mee_handler_id("accurate", MA_PROFILE_ACCURATE, mh_profile),
-	mee_handler_id("balanced", MA_PROFILE_BALANCED, mh_profile),
-	mee_handler_id("fast",     MA_PROFILE_FAST,     mh_profile),
-	mee_handler_id("breaking", MA_PROFILE_BREAKING, mh_profile),
-	mee_label     (""),
-	mee_label     ("Options changed by Option profiles:"),
-	mee_label     (""),
-	mee_label     ("Sound: Sound quality"),
-	mee_label     ("MD:    Renderer, FM audio, FM filter"),
-	mee_label     ("32X:   Renderer, PWM IRQ optimization"),
-	mee_label     ("CD:    CDDA audio"),
-	mee_end,
-};
-
-static int menu_loop_profile_options(int id, int keys)
-{
-	static int sel = 0;
-
-	me_loop_d(e_menu_profile, &sel, menu_draw_prep, NULL);
-
-	return 0;
-}
+static menu_entry e_menu_options[];
 
 static void region_prevnext(int right)
 {
@@ -1190,6 +822,39 @@ static int mh_opt_misc(int id, int keys)
 	return 0;
 }
 
+static int mh_saveloadcfg(int id, int keys)
+{
+	int ret;
+
+	if (keys & (PBTN_LEFT|PBTN_RIGHT)) { // multi choice
+		config_slot += (keys & PBTN_LEFT) ? -1 : 1;
+		if (config_slot < 0) config_slot = 9;
+		else if (config_slot > 9) config_slot = 0;
+		me_enable(e_menu_options, MA_OPT_LOADCFG, config_slot != config_slot_current);
+		return 0;
+	}
+
+	switch (id) {
+	case MA_OPT_SAVECFG:
+	case MA_OPT_SAVECFG_GAME:
+		if (emu_write_config(id == MA_OPT_SAVECFG_GAME ? 1 : 0))
+			menu_update_msg("config saved");
+		else
+			menu_update_msg("failed to write config");
+		break;
+	case MA_OPT_LOADCFG:
+		ret = emu_read_config(rom_fname_loaded, 1);
+		if (!ret) ret = emu_read_config(NULL, 1);
+		if (ret)  menu_update_msg("config loaded");
+		else      menu_update_msg("failed to load config");
+		break;
+	default:
+		return 0;
+	}
+
+	return 1;
+}
+
 static int mh_restore_defaults(int id, int keys)
 {
 	emu_set_defconfig();
@@ -1223,29 +888,34 @@ static const char *mgn_opt_region(int id, int *offs)
 	}
 }
 
-static const char h_hotkeysvld[] = "Slot used for save/load by emulator hotkey";
+static const char *mgn_saveloadcfg(int id, int *offs)
+{
+	static_buff[0] = 0;
+	if (config_slot != 0)
+		sprintf(static_buff, "[%i]", config_slot);
+	return static_buff;
+}
 
 static menu_entry e_menu_options[] =
 {
+	mee_range     ("Save slot",                MA_OPT_SAVE_SLOT,     state_slot, 0, 9),
 	mee_cust      ("Region",                   MA_OPT_REGION,        mh_opt_misc, mgn_opt_region),
 	mee_range     ("",                         MA_OPT_CPU_CLOCKS,    currentConfig.CPUclock, 20, 3200),
-	mee_range_h   ("Hotkey save/load slot",    MA_OPT_SAVE_SLOT,     state_slot, 0, 9, h_hotkeysvld),
-	mee_handler   ("Configure controls",       menu_loop_keyconfig),
-	mee_label     (""),
-	mee_handler   ("Option profiles",          menu_loop_profile_options),
-	mee_handler   ("Interface options",        menu_loop_ui_options),
-	mee_handler   ("Display options",          menu_loop_gfx_options),
-	mee_handler   ("Sound options",            menu_loop_snd_options),
-	mee_handler   ("MD/Genesis/Pico options",  menu_loop_md_options),
-	mee_handler   ("  Sega/Mega CD add-on",    menu_loop_cd_options),
+	mee_handler   ("[Interface options]",      menu_loop_ui_options),
+	mee_handler   ("[Display options]",        menu_loop_gfx_options),
+	mee_handler   ("[Sound options]",          menu_loop_snd_options),
+	mee_handler   ("[MD/Genesis options]",     menu_loop_md_options),
+	mee_handler   ("  [Sega/Mega CD add-on]",  menu_loop_cd_options),
 #ifndef NO_32X
-	mee_handler   ("  32X add-on",             menu_loop_32x_options),
+	mee_handler   ("  [32X add-on]",           menu_loop_32x_options),
 #endif
 #ifndef NO_SMS
-	mee_handler   ("SG/SMS/GG options",        menu_loop_sms_options),
+	mee_handler   ("[SG/SMS/GG options]",      menu_loop_sms_options),
 #endif
-	mee_handler   ("Advanced options",         menu_loop_adv_options),
-
+	mee_handler   ("[Advanced options]",       menu_loop_adv_options),
+	mee_cust_nosave("Save global config",      MA_OPT_SAVECFG, mh_saveloadcfg, mgn_saveloadcfg),
+	mee_cust_nosave("Save cfg for loaded game",MA_OPT_SAVECFG_GAME, mh_saveloadcfg, mgn_saveloadcfg),
+	mee_cust_nosave("Load cfg from profile",   MA_OPT_LOADCFG, mh_saveloadcfg, mgn_saveloadcfg),
 	mee_handler   ("Restore defaults",         mh_restore_defaults),
 	mee_end,
 };
@@ -1253,6 +923,9 @@ static menu_entry e_menu_options[] =
 static int menu_loop_options(int id, int keys)
 {
 	static int sel = 0;
+
+	me_enable(e_menu_options, MA_OPT_SAVECFG_GAME, PicoGameLoaded);
+	me_enable(e_menu_options, MA_OPT_LOADCFG, config_slot != config_slot_current);
 
 	me_loop_d(e_menu_options, &sel, menu_draw_prep, NULL);
 
@@ -1298,7 +971,7 @@ static void draw_text_debug(const char *str, int skip, int from)
 	str = p;
 	for (line = from; line < g_menuscreen_h / me_sfont_h; line++)
 	{
-		smalltext_out16(1, line * me_sfont_h, str, PXMAKE(0xff, 0xff, 0xff));
+		smalltext_out16(1, line * me_sfont_h, str, 0xffff);
 		while (*p && *p != '\n')
 			p++;
 		if (*p == 0)
@@ -1327,8 +1000,8 @@ static void draw_frame_debug(void)
 	pemu_forced_frame(1, 0);
 	make_bg(1, 1);
 
-	smalltext_out16(4, 1, "build: r" REVISION "  "__DATE__ " " __TIME__ " " COMPILER, PXMAKE(0xff, 0xff, 0xff));
-	smalltext_out16(4, g_menuscreen_h - me_sfont_h, layer_str, PXMAKE(0xff, 0xff, 0xff));
+	smalltext_out16(4, 1, "build: r" REVISION "  "__DATE__ " " __TIME__ " " COMPILER, 0xffff);
+	smalltext_out16(4, g_menuscreen_h - me_sfont_h, layer_str, 0xffff);
 }
 
 static void debug_menu_loop(void)
@@ -1352,7 +1025,7 @@ static void debug_menu_loop(void)
 				draw_text_debug(tmp, 0, 0);
 				if (dumped) {
 					smalltext_out16(g_menuscreen_w - 6 * me_sfont_h,
-						g_menuscreen_h - me_mfont_h, "dumped", PXMAKE(0xff, 0xff, 0xff));
+						g_menuscreen_h - me_mfont_h, "dumped", 0xffff);
 					dumped = 0;
 				}
 				break;
@@ -1426,17 +1099,17 @@ static void debug_menu_loop(void)
 
 static void draw_frame_credits(void)
 {
-	smalltext_out16(4, 1, "build: " __DATE__ " " __TIME__, PXMAKE(0xe0, 0xff, 0xe0));
+	smalltext_out16(4, 1, "build: " __DATE__ " " __TIME__, 0xe7fc);
 }
 
 static const char credits[] =
 	"PicoDrive v" VERSION "\n"
-	"(c) notaz, 2006-2013; irixxxx, 2018-2025\n\n"
+	"(c) notaz, 2006-2013; irixxxx, 2018-2021\n\n"
 	"Credits:\n"
-#ifdef EMU_C68K
-	"fDave: initial code, Cyclone 68000 core\n"
-#else
 	"fDave: initial code\n"
+#ifdef EMU_C68K
+	"      Cyclone 68000 core\n"
+#else
 	"Stef, Chui: FAME/C 68k core\n"
 #endif
 #ifdef _USE_DRZ80
@@ -1451,17 +1124,12 @@ static const char credits[] =
 	"Squidge: mmuhack\n"
 	"Dzz: ARM940 sample\n"
 #endif
-#if defined __PSP__ || defined __PS2__
-	"fjtrujy: PSP and PS2 platform code\n"
-#endif
 	"\n"
 	"special thanks (for docs, ideas):\n"
 	" Charles MacDonald, Haze,\n"
 	" Stephane Dallongeville,\n"
 	" Lordus, Exophase, Rokas,\n"
-	" Eke, Nemesis, Tasco Deluxe,\n"
-	"special thanks (for testing):\n"
-	" DrUm78, jdgleaver, freq_mod";
+	" Eke, Nemesis, Tasco Deluxe";
 
 static void menu_main_draw_status(void)
 {
@@ -1513,54 +1181,6 @@ static void menu_main_draw_status(void)
 			bp[(w - i) + g_menuscreen_pp * u] = menu_text_color;
 }
 
-static menu_entry e_menu_main[];
-
-static int tape_record_bit;
-static const char *tape_record_exts[] = { ".wav", ".bit" };
-
-static const char *mgn_loadtape(int id, int *offs)
-{
-	return "";
-}
-
-static int mh_loadtape(int id, int keys)
-{
-	if (keys & (PBTN_LEFT|PBTN_RIGHT)) { // multi choice
-		int x = me_id2offset(e_menu_main, MA_MAIN_SAVE_TAPE);
-		e_menu_main[x].enabled = !e_menu_main[x].enabled;
-		return 0;
-	}
-	if (keys & PBTN_MOK) {
-		static const char *rom_exts[] = { "bit", "wav", NULL };
-		const char *ret_name;
-
-		ret_name = menu_loop_romsel_d(rom_fname_loaded,
-				sizeof(rom_fname_loaded), rom_exts, NULL, menu_draw_prep);
-		if (ret_name == NULL)
-			return 0;
-
-		return emu_play_tape(ret_name);
-	}
-	return 1;
-}
-
-static const char *mgn_savetape(int id, int *offs)
-{
-	return tape_record_exts[!!tape_record_bit];
-}
-
-static int mh_savetape(int id, int keys)
-{
-	if (keys & (PBTN_LEFT|PBTN_RIGHT)) { // multi choice
-		tape_record_bit = !tape_record_bit;
-		return 0;
-	}
-	if (keys & PBTN_MOK) {
-		return emu_record_tape(tape_record_exts[!!tape_record_bit]);
-	}
-	return 1;
-}
-
 static int main_menu_handler(int id, int keys)
 {
 	const char *ret_name;
@@ -1587,8 +1207,8 @@ static int main_menu_handler(int id, int keys)
 		break;
 	case MA_MAIN_LOAD_ROM:
 		rom_fname_reload = NULL;
-		ret_name = menu_loop_romsel_d(rom_fname_loaded,
-			sizeof(rom_fname_loaded), rom_exts, NULL, menu_draw_prep);
+		ret_name = menu_loop_romsel(rom_fname_loaded,
+			sizeof(rom_fname_loaded), rom_exts, NULL);
 		if (ret_name != NULL) {
 			lprintf("selected file: %s\n", ret_name);
 			rom_fname_reload = ret_name;
@@ -1627,89 +1247,22 @@ static int main_menu_handler(int id, int keys)
 	return 0;
 }
 
-static const char *mgn_picopage(int id, int *offs)
-{
-	if (PicoPicohw.page != 7)
-		sprintf(static_buff, "%i", PicoPicohw.page);
-	else	sprintf(static_buff, "Test");
-	return static_buff;
-}
-
-static int mh_picopage(int id, int keys)
-{
-	if (keys & (PBTN_LEFT|PBTN_RIGHT)) { // multi choice
-		PicoPicohw.page += (keys & PBTN_LEFT) ? -1 : 1;
-		if (PicoPicohw.page < 0) PicoPicohw.page = 7;
-		else if (PicoPicohw.page > 7) PicoPicohw.page = 0;
-		return 0;
-	}
-	return 1;
-}
-
-static const char *mgn_saveloadcfg(int id, int *offs)
-{
-	strcpy(static_buff, "   ");
-	if (config_slot != 0)
-		sprintf(static_buff, "[%i]", config_slot);
-	return static_buff;
-}
-
-static int mh_saveloadcfg(int id, int keys)
-{
-	int ret;
-
-	if (keys & (PBTN_LEFT|PBTN_RIGHT)) { // multi choice
-		config_slot += (keys & PBTN_LEFT) ? -1 : 1;
-		if (config_slot < 0) config_slot = 9;
-		else if (config_slot > 9) config_slot = 0;
-		me_enable(e_menu_main, MA_OPT_LOADCFG, PicoGameLoaded && config_slot != config_slot_current);
-		return 0;
-	}
-
-	switch (id) {
-	case MA_OPT_SAVECFG:
-	case MA_OPT_SAVECFG_GAME:
-		if (emu_write_config(id == MA_OPT_SAVECFG_GAME ? 1 : 0))
-			menu_update_msg("config saved");
-		else
-			menu_update_msg("failed to write config");
-		break;
-	case MA_OPT_LOADCFG:
-		ret = emu_read_config(rom_fname_loaded, 1);
-		if (!ret) ret = emu_read_config(NULL, 1);
-		if (ret)  menu_update_msg("config loaded");
-		else      menu_update_msg("failed to load config");
-		break;
-	default:
-		return 0;
-	}
-
-	return 1;
-}
-
-
-static const char h_saveload[] = "Game options are overloading global options";
-
 static menu_entry e_menu_main[] =
 {
 	mee_label     ("PicoDrive " VERSION),
 	mee_label     (""),
 	mee_label     (""),
+	mee_label     (""),
 	mee_handler_id("Resume game",        MA_MAIN_RESUME_GAME, main_menu_handler),
-	mee_handler_id("Save state",         MA_MAIN_SAVE_STATE,  main_menu_handler),
-	mee_handler_id("Load state",         MA_MAIN_LOAD_STATE,  main_menu_handler),
+	mee_handler_id("Save State",         MA_MAIN_SAVE_STATE,  main_menu_handler),
+	mee_handler_id("Load State",         MA_MAIN_LOAD_STATE,  main_menu_handler),
 	mee_handler_id("Reset game",         MA_MAIN_RESET_GAME,  main_menu_handler),
-	mee_handler_id("Change CD",          MA_MAIN_CHANGE_CD,   main_menu_handler),
-	mee_cust_s_h  ("Storyware page",     MA_MAIN_PICO_PAGE, 0,mh_picopage, mgn_picopage, NULL),
-	mee_cust_s_h  ("Load tape",          MA_MAIN_LOAD_TAPE, 0,mh_loadtape, mgn_loadtape, NULL),
-	mee_cust_s_h  ("Save tape",          MA_MAIN_SAVE_TAPE, 0,mh_savetape, mgn_savetape, NULL),
-	mee_handler_id("Patches / GameGenie",MA_MAIN_PATCHES,     main_menu_handler),
-	mee_handler_id("Load new game",      MA_MAIN_LOAD_ROM,    main_menu_handler),
+	mee_handler_id("Load new ROM/ISO",   MA_MAIN_LOAD_ROM,    main_menu_handler),
+	mee_handler_id("Change CD/ISO",      MA_MAIN_CHANGE_CD,   main_menu_handler),
 	mee_handler   ("Change options",                          menu_loop_options),
-	mee_cust_s_h  ("Save global options",MA_OPT_SAVECFG, 0,   mh_saveloadcfg, mgn_saveloadcfg, NULL),
-	mee_cust_s_h  ("Save game options",  MA_OPT_SAVECFG_GAME, 0, mh_saveloadcfg, mgn_saveloadcfg, h_saveload),
-	mee_cust_s_h  ("Load game options",  MA_OPT_LOADCFG, 0,   mh_saveloadcfg, mgn_saveloadcfg, h_saveload),
+	mee_handler   ("Configure controls",                      menu_loop_keyconfig),
 	mee_handler_id("Credits",            MA_MAIN_CREDITS,     main_menu_handler),
+	mee_handler_id("Patches / GameGenie",MA_MAIN_PATCHES,     main_menu_handler),
 	mee_handler_id("Exit",               MA_MAIN_EXIT,        main_menu_handler),
 	mee_end,
 };
@@ -1723,12 +1276,7 @@ void menu_loop(void)
 	me_enable(e_menu_main, MA_MAIN_LOAD_STATE,  PicoGameLoaded);
 	me_enable(e_menu_main, MA_MAIN_RESET_GAME,  PicoGameLoaded);
 	me_enable(e_menu_main, MA_MAIN_CHANGE_CD,   PicoIn.AHW & PAHW_MCD);
-	me_enable(e_menu_main, MA_MAIN_LOAD_TAPE,   PicoIn.AHW & PAHW_SC);
-	me_enable(e_menu_main, MA_MAIN_SAVE_TAPE,   0);
-	me_enable(e_menu_main, MA_MAIN_PICO_PAGE,   PicoIn.AHW & PAHW_PICO);
-	me_enable(e_menu_main, MA_MAIN_PATCHES,     PicoPatches != NULL);
-	me_enable(e_menu_main, MA_OPT_SAVECFG_GAME, PicoGameLoaded);
-	me_enable(e_menu_main, MA_OPT_LOADCFG,      PicoGameLoaded && config_slot != config_slot_current);
+	me_enable(e_menu_main, MA_MAIN_PATCHES, PicoPatches != NULL);
 
 	menu_enter(PicoGameLoaded);
 	in_set_config_int(0, IN_CFG_BLOCKING, 1);
@@ -1753,8 +1301,8 @@ static int mh_tray_load_cd(int id, int keys)
 	const char *ret_name;
 
 	rom_fname_reload = NULL;
-	ret_name = menu_loop_romsel_d(rom_fname_loaded,
-			sizeof(rom_fname_loaded), rom_exts, NULL, menu_draw_prep);
+	ret_name = menu_loop_romsel(rom_fname_loaded,
+			sizeof(rom_fname_loaded), rom_exts, NULL);
 	if (ret_name == NULL)
 		return 0;
 
@@ -1814,19 +1362,9 @@ void menu_update_msg(const char *msg)
 /* hidden options for config engine only */
 static menu_entry e_menu_hidden[] =
 {
-	mee_onoff("Accurate sprites",         MA_OPT_ACC_SPRITES,    PicoIn.opt, POPT_ACC_SPRITES),
-//	mee_range("Save slot",                MA_OPT_SAVE_SLOT,      state_slot, 0, 9),
-
-//	mee_enum ("Confirm savestate",        MA_OPT_CONFIRM_STATES, currentConfig.confirm_save, men_confirm_save),
-	mee_onoff("autoload savestates",      MA_OPT_AUTOLOAD_SAVE,  g_autostateld_opt, 1),
-	mee_onoff("SDL fullscreen mode",      MA_OPT_VOUT_FULL,      plat_target.vout_fullscreen, 1),
-	mee_onoff("Emulate Z80",              MA_OPT2_ENABLE_Z80,    PicoIn.opt, POPT_EN_Z80),
-	mee_onoff("Emulate YM2612 (FM)",      MA_OPT2_ENABLE_YM2612, PicoIn.opt, POPT_EN_FM),
-	mee_onoff("Disable YM2612 SSG-EG",    MA_OPT2_DISABLE_YM_SSG,PicoIn.opt, POPT_DIS_FM_SSGEG),
-	mee_onoff("Enable YM2612 DAC noise",  MA_OPT2_ENABLE_YM_DAC, PicoIn.opt, POPT_EN_FM_DAC),
-	mee_onoff("Emulate SN76496 (PSG)",    MA_OPT2_ENABLE_SN76496,PicoIn.opt, POPT_EN_PSG),
-	mee_onoff("Scale/Rot. fx",            MA_CDOPT_SCALEROT_CHIP,PicoIn.opt, POPT_EN_MCD_GFX),
-	mee_onoff("32X enabled",              MA_32XOPT_ENABLE_32X,  PicoIn.opt, POPT_EN_32X),
+	mee_onoff("Accurate sprites", MA_OPT_ACC_SPRITES, PicoIn.opt, POPT_ACC_SPRITES),
+	mee_onoff("autoload savestates", MA_OPT_AUTOLOAD_SAVE, g_autostateld_opt, 1),
+	mee_onoff("SDL fullscreen mode", MA_OPT_VOUT_FULL, plat_target.vout_fullscreen, 1),
 	mee_end,
 };
 
@@ -1846,7 +1384,6 @@ static menu_entry *e_menu_table[] =
 	e_menu_sms_options,
 #endif
 	e_menu_keyconfig,
-	e_menu_gunconfig,
 	e_menu_hidden,
 };
 
@@ -1902,7 +1439,7 @@ void menu_init(void)
 		plat_target.hwfilters != NULL);
 
 	me_enable(e_menu_gfx_options, MA_OPT2_GAMMA,
-		plat_target.gamma_set != NULL);
+                plat_target.gamma_set != NULL);
 
 	i = me_id2offset(e_menu_options, MA_OPT_CPU_CLOCKS);
 	e_menu_options[i].enabled = 0;
@@ -1910,7 +1447,4 @@ void menu_init(void)
 		e_menu_options[i].name = "CPU clock";
 		e_menu_options[i].enabled = 1;
 	}
-	// suppress warnings about unused libpicofe funcs
-	(void)me_loop;
-	(void)menu_loop_romsel;
 }

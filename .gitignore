@@ -25,13 +25,8 @@ cfg/
 libs/
 obj/
 .opk_data
-.od_data
 PicoDrive
-picodrive
-picodrive_libretro*
-PicoDrive*.opk
-PicoDrive*.ipk
-PicoDrive*.zip
+PicoDrive.opk
 pico_int_offs.h
 amalgamate
 textfilter

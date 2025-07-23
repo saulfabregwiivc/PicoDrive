@@ -1,8 +1,6 @@
 /*
- * PicoDrive PSP frontend
- *
+ * PicoDrive
  * (C) notaz, 2007,2008
- * (C) irixxxx, 2022-2024
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.
@@ -17,7 +15,6 @@
 #include <psputils.h>
 #include <pspgu.h>
 #include <pspaudio.h>
-#include <pspsysmem.h>
 
 #include "psp.h"
 #include "emu.h"
@@ -26,7 +23,6 @@
 #include "asm_utils.h"
 #include "../common/emu.h"
 #include "../common/input_pico.h"
-#include "../common/keyboard.h"
 #include "platform/libpicofe/input.h"
 #include "platform/libpicofe/menu.h"
 #include "platform/libpicofe/plat.h"
@@ -39,6 +35,9 @@
 
 int engineStateSuspend;
 
+#define PICO_PEN_ADJUST_X 4
+#define PICO_PEN_ADJUST_Y 2
+
 struct Vertex
 {
 	short u,v;
@@ -49,9 +48,7 @@ static struct Vertex __attribute__((aligned(4))) g_vertices[2];
 static u16 __attribute__((aligned(16))) localPal[0x100];
 static int need_pal_upload = 0;
 
-u16 __attribute__((aligned(16))) osd_buf[512*8]; // buffer for osd text
-int osd_buf_x[4], osd_buf_l[4]; // store for x and length for blitting
-int osd_buf_cnt, osd_cdleds;
+static u16 __attribute__((aligned(16))) osd_buf[512*8]; // buffer for osd text
 
 static int out_x, out_y;
 static int out_w, out_h;
@@ -108,7 +105,6 @@ static void change_renderer(int diff)
 static void apply_renderer(void)
 {
 	PicoIn.opt &= ~(POPT_ALT_RENDERER|POPT_EN_SOFTSCALE);
-	PicoIn.opt |= POPT_DIS_32C_BORDER;
 
 	switch (get_renderer()) {
 	case RT_16BIT:
@@ -122,6 +118,32 @@ static void apply_renderer(void)
 		PicoDrawSetOutFormat(PDF_NONE, 0);
 		break;
 	}
+}
+
+static void osd_text(int x, const char *text)
+{
+	struct Vertex* vx;
+	int len = strlen(text) * 8 / 2;
+	int *p, h;
+	void *tmp = g_screen_ptr;
+
+	g_screen_ptr = osd_buf;
+	for (h = 0; h < 8; h++) {
+		p = (int *) (osd_buf+x+512*h);
+		p = (int *) ((int)p & ~3); // align
+		memset32_uncached(p, 0, len);
+	}
+	emu_text_out16(x, 0, text);
+	g_screen_ptr = tmp;
+
+	vx = (struct Vertex*)sceGuGetMemory(2 * sizeof(struct Vertex));
+	vx[0].u = x,         vx[0].v = 0;
+	vx[1].u = x + len*2, vx[1].v = 8;
+	vx[0].x = x,         vx[0].y = 264;
+	vx[1].x = x + len*2, vx[1].y = 272;
+	sceGuTexMode(GU_PSM_5650,0,0,0);
+	sceGuTexImage(0,512,8,512,osd_buf);
+	sceGuDrawArray(GU_SPRITES,GU_TEXTURE_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_2D,2,0,vx);
 }
 
 
@@ -195,7 +217,7 @@ static void do_pal_update_sms(void)
 	int i;
 	
 	if (!(Pico.video.reg[0] & 0x4)) {
-		int sg = !!(PicoIn.AHW & (PAHW_SG|PAHW_SC));
+		int sg = !!(Pico.m.hardware & PMS_HW_SG);
 		for (i = Pico.est.SonicPalCount; i >= 0; i--)
 			do_pal_convert(localPal+i*0x40, tmspal+sg*0x10, currentConfig.gamma, currentConfig.gamma2);
 	} else {
@@ -254,79 +276,7 @@ static void do_pal_update(void)
 	need_pal_upload = 1;
 }
 
-static void osd_text(int x, const char *text)
-{
-	int len = strlen(text) * 8;
-	int *p, h;
-	void *tmp = g_screen_ptr;
-
-	g_screen_ptr = osd_buf;
-	for (h = 0; h < 8; h++) {
-		p = (int *) (osd_buf+x+512*h);
-		p = (int *) ((int)p & ~3); // align
-		memset32_uncached(p, 0, len/2);
-	}
-	emu_text_out16(x, 0, text);
-	g_screen_ptr = tmp;
-
-	osd_buf_x[osd_buf_cnt] = x;
-	osd_buf_l[osd_buf_cnt] = len;
-	osd_buf_cnt ++;
-}
-
-static void blit_osd(void)
-{
-	struct Vertex* vx;
-	int x, len;
-
-	while (osd_buf_cnt > 0) {
-		osd_buf_cnt --;
-		x = osd_buf_x[osd_buf_cnt];
-		len = osd_buf_l[osd_buf_cnt];
-		vx = (struct Vertex*)sceGuGetMemory(2 * sizeof(struct Vertex));
-		vx[0].u = x,       vx[0].v = 0;
-		vx[1].u = x + len, vx[1].v = 8;
-		vx[0].x = x,       vx[0].y = 264;
-		vx[1].x = x + len, vx[1].y = 272;
-		sceGuTexMode(GU_PSM_5650,0,0,0);
-		sceGuTexImage(0,512,8,512,osd_buf);
-		sceGuDrawArray(GU_SPRITES,GU_TEXTURE_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_2D,2,0,vx);
-	}
-}
-
-static void cd_leds(void)
-{
-	unsigned int reg, col_g, col_r, *p;
-
-	reg = Pico_mcd->s68k_regs[0];
-
-	p = (unsigned int *)((short *)osd_buf + 512*2+498);
-	col_g = (reg & 2) ? 0x06000600 : 0;
-	col_r = (reg & 1) ? 0x00180018 : 0;
-	*p++ = col_g; *p++ = col_g; p+=2; *p++ = col_r; *p++ = col_r; p += 512/2 - 12/2;
-	*p++ = col_g; *p++ = col_g; p+=2; *p++ = col_r; *p++ = col_r; p += 512/2 - 12/2;
-	*p++ = col_g; *p++ = col_g; p+=2; *p++ = col_r; *p++ = col_r;
-
-	osd_cdleds = 1;
-}
-
-static void blit_cdleds(void)
-{
-	struct Vertex* vx;
-
-	if (!osd_cdleds) return;
-
-	vx = (struct Vertex*)sceGuGetMemory(2 * sizeof(struct Vertex));
-	vx[0].u = 497,          vx[0].v = 1;
-	vx[1].u = 497+14,       vx[1].v = 6;
-	vx[0].x = 4,            vx[0].y = 1;
-	vx[1].x = 4+14,         vx[1].y = 6;
-	sceGuTexMode(GU_PSM_5650,0,0,0);
-	sceGuTexImage(0,512,8,512,osd_buf);
-	sceGuDrawArray(GU_SPRITES,GU_TEXTURE_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_2D,2,0,vx);
-}
-
-void blitscreen_clut(void)
+static void blitscreen_clut(void)
 {
 	sceGuTexMode(is_16bit_mode() ? GU_PSM_5650:GU_PSM_T8,0,0,0);
 	sceGuTexImage(0,512,512,512,g_screen_ptr);
@@ -364,45 +314,67 @@ void blitscreen_clut(void)
 	else
 #endif
 		sceGuDrawArray(GU_SPRITES,GU_TEXTURE_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_2D,2,0,g_vertices);
-
-	blit_osd();
-	blit_cdleds();
 }
 
+
+static void cd_leds(void)
+{
+	struct Vertex* vx;
+	unsigned int reg, col_g, col_r, *p;
+
+	reg = Pico_mcd->s68k_regs[0];
+
+	p = (unsigned int *)((short *)osd_buf + 512*2+498);
+	col_g = (reg & 2) ? 0x06000600 : 0;
+	col_r = (reg & 1) ? 0x00180018 : 0;
+	*p++ = col_g; *p++ = col_g; p+=2; *p++ = col_r; *p++ = col_r; p += 512/2 - 12/2;
+	*p++ = col_g; *p++ = col_g; p+=2; *p++ = col_r; *p++ = col_r; p += 512/2 - 12/2;
+	*p++ = col_g; *p++ = col_g; p+=2; *p++ = col_r; *p++ = col_r;
+
+	vx = (struct Vertex*)sceGuGetMemory(2 * sizeof(struct Vertex));
+	vx[0].u = 497,          vx[0].v = 1;
+	vx[1].u = 497+14,       vx[1].v = 6;
+	vx[0].x = 4,            vx[0].y = 1;
+	vx[1].x = 4+14,         vx[1].y = 6;
+	sceGuTexMode(GU_PSM_5650,0,0,0);
+	sceGuTexImage(0,512,8,512,osd_buf);
+	sceGuDrawArray(GU_SPRITES,GU_TEXTURE_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_2D,2,0,vx);
+}
 
 static void draw_pico_ptr(void)
 {
-	int up = (PicoPicohw.pen_pos[0]|PicoPicohw.pen_pos[1]) & 0x8000;
-	int x = pico_pen_x, y = pico_pen_y, offs;
-	int pitch = g_screen_ppitch;
-	// storyware pages are actually squished, 2:1
-	int h = (pico_inp_mode == 1 ? 160 : out_h);
-	if (h < 224) y++;
+	unsigned char *p = (unsigned char *)g_screen_ptr + 8;
 
-	x = (x * out_w * ((1ULL<<32) / 320 + 1)) >> 32;
-	y = (y *     h * ((1ULL<<32) / 224 + 1)) >> 32;
+	// only if pen enabled and for 8bit mode
+	if (pico_inp_mode == 0 || is_16bit_mode()) return;
 
-	offs = pitch * (out_y+y) + (out_x+x);
+	p += 512 * (pico_pen_y + PICO_PEN_ADJUST_Y);
+	p += pico_pen_x + PICO_PEN_ADJUST_X;
+	if (!(Pico.video.reg[12]&1) && !(PicoIn.opt & POPT_DIS_32C_BORDER))
+		p += 32;
 
-	if (is_16bit_mode()) {
-		unsigned short *p = (unsigned short *)g_screen_ptr + offs;
-		int o = (up ? 0x0000 : 0xffff), _ = (up ? 0xffff : 0x0000);
-
-		p[-pitch-1] ^= o; p[-pitch] ^= _; p[-pitch+1] ^= _; p[-pitch+2] ^= o;
-		p[-1]       ^= _; p[0]      ^= o; p[1]        ^= o; p[2]        ^= _;
-		p[pitch-1]  ^= _; p[pitch]  ^= o; p[pitch+1]  ^= o; p[pitch+2]  ^= _;
-		p[2*pitch-1]^= o; p[2*pitch]^= _; p[2*pitch+1]^= _; p[2*pitch+2]^= o;
-	} else {
-		unsigned char *p = (unsigned char *)g_screen_ptr + offs + 8;
-		int o = (up ? 0xe0 : 0xf0), _ = (up ? 0xf0 : 0xe0);
-
-		p[-pitch-1] = o; p[-pitch] = _; p[-pitch+1] = _; p[-pitch+2] = o;
-		p[-1]       = _; p[0]      = o; p[1]        = o; p[2]        = _;
-		p[pitch-1]  = _; p[pitch]  = o; p[pitch+1]  = o; p[pitch+2]  = _;
-		p[2*pitch-1]= o; p[2*pitch]= _; p[2*pitch+1]= _; p[2*pitch+2]= o;
-	}
+	p[  -1] = 0xe0; p[   0] = 0xf0; p[   1] = 0xe0;
+	p[ 511] = 0xf0; p[ 512] = 0xf0; p[ 513] = 0xf0;
+	p[1023] = 0xe0; p[1024] = 0xf0; p[1025] = 0xe0;
 }
 
+
+// clears whole screen or just the notice area (in all buffers)
+static void clearArea(int full)
+{
+	void *fb = psp_video_get_active_fb();
+
+	if (full) {
+		u32  val  = (is_16bit_mode() ? 0x00000000 : 0xe0e0e0e0);
+		long sz = 512*272*2;
+		memset32_uncached(psp_screen, 0, 512*272*2/4); // frame buffer
+		memset32_uncached(fb, 0, 512*272*2/4); // frame buff on display
+		memset32(VRAM_CACHED_STUFF, val, 2*sz/4); // 2 draw buffers
+	} else {
+		memset32_uncached((int *)((char *)psp_screen + 512*264*2), 0, 512*8*2/4);
+		memset32_uncached((int *)((char *)fb         + 512*264*2), 0, 512*8*2/4);
+	}
+}
 
 static void vidResetMode(void)
 {
@@ -426,139 +398,54 @@ static void vidResetMode(void)
 }
 
 /* sound stuff */
-#define SOUND_BLOCK_COUNT    7
-#define SOUND_BUFFER_CHUNK   (2*44100/50) // max.rate/min.frames in stereo
+#define SOUND_BLOCK_SIZE_NTSC (1470*2) // 1024 // 1152
+#define SOUND_BLOCK_SIZE_PAL  (1764*2)
+#define SOUND_BLOCK_COUNT    8
 
-static short sndBuffer_emu[SOUND_BUFFER_CHUNK+4]; // 4 for sample rounding overhang
-static short __attribute__((aligned(4))) sndBuffer[SOUND_BUFFER_CHUNK*SOUND_BLOCK_COUNT];
-static short *sndBuffer_endptr;
-static int samples_block;
-
-static short *snd_playptr, *sndBuffer_ptr;
-static int samples_made, samples_done;
-
+static short __attribute__((aligned(4))) sndBuffer[SOUND_BLOCK_SIZE_PAL*SOUND_BLOCK_COUNT + 54000/50*2];
+static short *snd_playptr = NULL, *sndBuffer_endptr = NULL;
+static int samples_made = 0, samples_done = 0, samples_block = 0;
 static int sound_thread_exit = 0;
 static SceUID sound_sem = -1;
 
-// There are problems if the sample rate used with the PSP isn't 44100 Hz stereo.
-// Hence, use only 11025,22050,44100 here and handle duplication and upsampling.
-// Upsample by nearest neighbour, which is the fastest but may create artifacts.
-
-static void writeSound(int len)
-{
-	// make sure there is enough free space in the buffer after
-	// this frame, else the next frame may overwrite old stored samples.
-	if (samples_made - samples_done < samples_block * (SOUND_BLOCK_COUNT-2) - 8) {
-		sndBuffer_ptr += len / 2;
-		if (sndBuffer_ptr - sndBuffer > sizeof(sndBuffer)/2)
-			lprintf("snd ovrn %d %d\n", len, sndBuffer_ptr - sndBuffer);
-		if (sndBuffer_ptr >= sndBuffer_endptr) {
-			int wrap = sndBuffer_ptr - sndBuffer_endptr;
-			if (wrap > 0)
-				memcpy(sndBuffer, sndBuffer_endptr, 2*wrap);
-			sndBuffer_ptr -= sndBuffer_endptr - sndBuffer;
-		}
-
-		samples_made += len / 2;
-	} else
-		lprintf("snd oflow %i!\n", samples_made - samples_done);
-
-	// signal the snd thread
-	sceKernelSignalSema(sound_sem, 1);
-}
-
-static void writeSound_44100_stereo(int len)
-{
-	writeSound(len);
-	PicoIn.sndOut = sndBuffer_ptr;
-}
-
-static void writeSound_44100_mono(int len)
-{
-	short *p = sndBuffer_ptr;
-	int i;
-
-	for (i = 0; i < len / 2; i++, p+=2)
-		p[0] = p[1] = PicoIn.sndOut[i];
-	writeSound(2*len);
-}
-
-static void writeSound_22050_stereo(int len)
-{
-	short *p = sndBuffer_ptr;
-	int i;
-
-	for (i = 0; i < len / 2; i+=2, p+=4) {
-		p[0] = p[2] = PicoIn.sndOut[i];
-		p[1] = p[3] = PicoIn.sndOut[i+1];
-	}
-	writeSound(2*len);
-}
-
-static void writeSound_22050_mono(int len)
-{
-	short *p = sndBuffer_ptr;
-	int i;
-
-	for (i = 0; i < len / 2; i++, p+=4) {
-		p[0] = p[2] = PicoIn.sndOut[i];
-		p[1] = p[3] = PicoIn.sndOut[i];
-	}
-	writeSound(4*len);
-}
-
-static void writeSound_11025_stereo(int len)
-{
-	short *p = sndBuffer_ptr;
-	int i;
-
-	for (i = 0; i < len / 2; i+=2, p+=8) {
-		p[0] = p[2] = p[4] = p[6] = PicoIn.sndOut[i];
-		p[1] = p[3] = p[5] = p[7] = PicoIn.sndOut[i+1];
-	}
-	writeSound(4*len);
-}
-
-static void writeSound_11025_mono(int len)
-{
-	short *p = sndBuffer_ptr;
-	int i;
-
-	for (i = 0; i < len / 2; i++, p+=8) {
-		p[0] = p[2] = p[4] = p[6] = PicoIn.sndOut[i];
-		p[1] = p[3] = p[5] = p[7] = PicoIn.sndOut[i];
-	}
-	writeSound(8*len);
-}
+static void writeSound(int len);
 
 static int sound_thread(SceSize args, void *argp)
 {
+	int ret = 0;
+
 	lprintf("sthr: started, priority %i\n", sceKernelGetThreadCurrentPriority());
 
 	while (!sound_thread_exit)
 	{
-		int ret;
-
 		if (samples_made - samples_done < samples_block) {
 			// wait for data (use at least 2 blocks)
 			//lprintf("sthr: wait... (%i)\n", samples_made - samples_done);
-			while (samples_made - samples_done < samples_block*2 && !sound_thread_exit) {
+			while (samples_made - samples_done <= samples_block*2 && !sound_thread_exit)
 				ret = sceKernelWaitSema(sound_sem, 1, 0);
-				if (ret < 0) lprintf("sthr: sceKernelWaitSema: %i\n", ret);
-			}
+			if (ret < 0) lprintf("sthr: sceKernelWaitSema: %i\n", ret);
+			continue;
 		}
 
-		// if the sample buffer runs low, push some extra
-		if (sceAudioOutput2GetRestSample()*2 < samples_block/4)
-			ret = sceAudioSRCOutputBlocking(PSP_AUDIO_VOLUME_MAX, snd_playptr);
+		// lprintf("sthr: got data: %i\n", samples_made - samples_done);
+
 		ret = sceAudioSRCOutputBlocking(PSP_AUDIO_VOLUME_MAX, snd_playptr);
-		// 1.5 kernel returns 0, newer ones return # of samples queued
-		if (ret < 0) lprintf("sthr: play: ret %08x; pos %i/%i\n", ret, samples_done, samples_made);
 
 		samples_done += samples_block;
 		snd_playptr  += samples_block;
 		if (snd_playptr >= sndBuffer_endptr)
-			snd_playptr -= sndBuffer_endptr - sndBuffer;
+			snd_playptr = sndBuffer;
+		// 1.5 kernel returns 0, newer ones return # of samples queued
+		if (ret < 0)
+			lprintf("sthr: sceAudioSRCOutputBlocking: %08x; pos %i/%i\n", ret, samples_done, samples_made);
+
+		// shouln't happen, but just in case
+		if (samples_made - samples_done >= samples_block*3) {
+			//lprintf("sthr: block skip (%i)\n", samples_made - samples_done);
+			samples_done += samples_block; // skip
+			snd_playptr  += samples_block;
+		}
+
 	}
 
 	lprintf("sthr: exit\n");
@@ -575,9 +462,9 @@ static void sound_init(void)
 	if (sound_sem < 0) lprintf("sceKernelCreateSema() failed: %i\n", sound_sem);
 
 	samples_made = samples_done = 0;
-	samples_block = 2*22050/60; // make sure it goes to sema
+	samples_block = SOUND_BLOCK_SIZE_NTSC; // make sure it goes to sema
 	sound_thread_exit = 0;
-	thid = sceKernelCreateThread("sndthread", sound_thread, 0x12, 0x1000, 0, NULL);
+	thid = sceKernelCreateThread("sndthread", sound_thread, 0x12, 0x10000, 0, NULL);
 	if (thid >= 0)
 	{
 		ret = sceKernelStartThread(thid, 0, 0);
@@ -587,18 +474,13 @@ static void sound_init(void)
 		lprintf("sceKernelCreateThread failed: %i\n", thid);
 }
 
-#define PSP_RATE 44100 // PicoIn.sndRate
-
 void pemu_sound_start(void)
 {
 	static int PsndRate_old = 0, PicoOpt_old = 0, pal_old = 0;
 	static int mp3_init_done;
-	int ret, stereo, factor;
+	int ret, stereo;
 
 	samples_made = samples_done = 0;
-
-	if (!(currentConfig.EmuOpt & EOPT_EN_SOUND))
-		return;
 
 	if (PicoIn.AHW & PAHW_MCD) {
 		// mp3...
@@ -609,38 +491,34 @@ void pemu_sound_start(void)
 		}
 	}
 
+	if (PicoIn.sndRate > 52000 && PicoIn.sndRate < 54000)
+		PicoIn.sndRate = YM2612_NATIVE_RATE();
 	ret = POPT_EN_FM|POPT_EN_PSG|POPT_EN_STEREO;
 	if (PicoIn.sndRate != PsndRate_old || (PicoIn.opt&ret) != (PicoOpt_old&ret) || Pico.m.pal != pal_old) {
 		PsndRerate(Pico.m.frame_count ? 1 : 0);
 	}
-	stereo = (PicoIn.opt&8)>>3;
+	stereo=(PicoIn.opt&8)>>3;
 
-	// PSP doesn't support mono in SRC, always use stereo and convert
-	factor = PSP_RATE / PicoIn.sndRate;
-	samples_block = (PSP_RATE / (Pico.m.pal ? 50 : 60)) * 2;
+	samples_block = Pico.m.pal ? SOUND_BLOCK_SIZE_PAL : SOUND_BLOCK_SIZE_NTSC;
+	if (PicoIn.sndRate <= 22050) samples_block /= 2;
+	sndBuffer_endptr = &sndBuffer[samples_block*SOUND_BLOCK_COUNT];
 
 	lprintf("starting audio: %i, len: %i, stereo: %i, pal: %i, block samples: %i\n",
 			PicoIn.sndRate, Pico.snd.len, stereo, Pico.m.pal, samples_block);
 
-	ret = sceAudioSRCChReserve(samples_block/2, PSP_RATE, 2); // seems to not need that stupid 64byte alignment
+	// while (sceAudioOutput2GetRestSample() > 0) psp_msleep(100);
+	// sceAudioSRCChRelease();
+	ret = sceAudioSRCChReserve(samples_block/2, PicoIn.sndRate, 2); // seems to not need that stupid 64byte alignment
 	if (ret < 0) {
 		lprintf("sceAudioSRCChReserve() failed: %i\n", ret);
 		emu_status_msg("sound init failed (%i), snd disabled", ret);
 		currentConfig.EmuOpt &= ~EOPT_EN_SOUND;
 	} else {
-		switch (factor) {
-		case 1: PicoIn.writeSound = stereo ? writeSound_44100_stereo:writeSound_44100_mono; break;
-		case 2: PicoIn.writeSound = stereo ? writeSound_22050_stereo:writeSound_22050_mono; break;
-		case 4: PicoIn.writeSound = stereo ? writeSound_11025_stereo:writeSound_11025_mono; break;
-		}
-		sndBuffer_endptr = sndBuffer + (SOUND_BLOCK_COUNT-1)*samples_block;
-		snd_playptr = sndBuffer_ptr = sndBuffer;
-		PicoIn.sndOut = (factor == 1 && stereo ? sndBuffer_ptr : sndBuffer_emu);
-
-		// push one audio block to cover time to first frame audio
-//		memset32(PicoIn.sndOut, 0, samples_block/2);
-//		writeSound(samples_block*2);
-
+		PicoIn.writeSound = writeSound;
+		memset32((int *)(void *)sndBuffer, 0, sizeof(sndBuffer)/4);
+		snd_playptr = sndBuffer_endptr - samples_block;
+		samples_made = samples_block; // send 1 empty block first..
+		PicoIn.sndOut = sndBuffer;
 		PsndRate_old = PicoIn.sndRate;
 		PicoOpt_old  = PicoIn.opt;
 		pal_old = Pico.m.pal;
@@ -666,6 +544,14 @@ void pemu_sound_stop(void)
 	sceAudioSRCChRelease();
 }
 
+/* wait until we can write more sound */
+void pemu_sound_wait(void)
+{
+	// TODO: test this
+	while (!sound_thread_exit && samples_made - samples_done > samples_block * 4)
+		psp_msleep(10);
+}
+
 static void sound_deinit(void)
 {
 	sound_thread_exit = 1;
@@ -673,6 +559,31 @@ static void sound_deinit(void)
 	sceKernelDeleteSema(sound_sem);
 	sound_sem = -1;
 }
+
+static void writeSound(int len)
+{
+	int ret;
+
+	PicoIn.sndOut += len / 2;
+	/*if (PicoIn.sndOut > sndBuffer_endptr) {
+		memcpy((int *)(void *)sndBuffer, (int *)endptr, (PicoIn.sndOut - endptr + 1) * 2);
+		PicoIn.sndOut = &sndBuffer[PicoIn.sndOut - endptr];
+		lprintf("mov\n");
+	}
+	else*/
+	if (PicoIn.sndOut > sndBuffer_endptr) lprintf("snd oflow %i!\n", PicoIn.sndOut - sndBuffer_endptr);
+	if (PicoIn.sndOut >= sndBuffer_endptr)
+		PicoIn.sndOut = sndBuffer;
+
+	// signal the snd thread
+	samples_made += len / 2;
+	if (samples_made - samples_done > samples_block*2) {
+		// lprintf("signal, %i/%i\n", samples_done, samples_made);
+		ret = sceKernelSignalSema(sound_sem, 1);
+		//if (ret < 0) lprintf("snd signal ret %08x\n", ret);
+	}
+}
+
 
 /* set default configuration values */
 void pemu_prep_defconfig(void)
@@ -682,9 +593,9 @@ void pemu_prep_defconfig(void)
 	defaultConfig.CPUclock = 333;
 	defaultConfig.filter = EOPT_FILTER_BILINEAR; // bilinear filtering
 	defaultConfig.scaling = EOPT_SCALE_43;
-	defaultConfig.vscaling = EOPT_VSCALE_FULL;
+	defaultConfig.vscaling = EOPT_VSCALE_43;
 	defaultConfig.renderer = RT_8BIT_ACC;
-	defaultConfig.renderer32x = RT_8BIT_FAST;
+	defaultConfig.renderer32x = RT_8BIT_ACC;
 	defaultConfig.EmuOpt |= EOPT_SHOW_RTC;
 }
 
@@ -703,32 +614,25 @@ void pemu_validate_config(void)
 void pemu_finalize_frame(const char *fps, const char *notice)
 {
 	int emu_opt = currentConfig.EmuOpt;
+	int offs = (psp_screen == VRAM_FB0) ? VRAMOFFS_FB0 : VRAMOFFS_FB1;
 
-	if (PicoIn.AHW & PAHW_PICO) {
-		int h = out_h, w = out_w;
-		u16 *pd = g_screen_ptr + out_y*g_screen_ppitch + out_x;
+	if (PicoIn.AHW & PAHW_PICO)
+		draw_pico_ptr();
 
-		if (pico_inp_mode && is_16bit_mode())
-			emu_pico_overlay(pd, w, h, g_screen_ppitch);
-		if (pico_inp_mode /*== 2 || overlay*/)
-			draw_pico_ptr();
-	}
+	sceGuSync(0,0); // sync with prev
+	sceGuStart(GU_DIRECT, guCmdList);
+	sceGuDrawBuffer(GU_PSM_5650, (void *)offs, 512); // point to back buffer
 
-	// draw virtual keyboard on display
-	if (kbd_mode && currentConfig.keyboard == 1 && vkbd)
-		vkbd_draw(vkbd);
+	blitscreen_clut();
 
-	osd_buf_cnt = 0;
-	if (notice)
-		osd_text(4, notice);
-	if (emu_opt & EOPT_SHOW_FPS)
-		osd_text(OSD_FPS_X, fps);
+	if (notice)      osd_text(4, notice);
+	if (emu_opt & 2) osd_text(OSD_FPS_X, fps);
 
-	osd_cdleds = 0;
-	if ((emu_opt & EOPT_EN_CD_LEDS) && (PicoIn.AHW & PAHW_MCD))
+	if ((emu_opt & 0x400) && (PicoIn.AHW & PAHW_MCD))
 		cd_leds();
 
 	sceKernelDcacheWritebackAll();
+	sceGuFinish();
 }
 
 /* FIXME: move plat_* to plat? */
@@ -764,21 +668,15 @@ void plat_status_msg_busy_next(const char *msg)
 {
 	plat_status_msg_clear();
 	pemu_finalize_frame("", msg);
-	// flip twice since our GU pipeline has one frame delay
-	plat_video_flip();
 	plat_video_flip();
 	emu_status_msg("");
 	reset_timing = 1;
 }
 
-void plat_status_msg_busy_done(void)
-{
-}
-
 /* clear status message area */
 void plat_status_msg_clear(void)
 {
-	// not needed since the screen buf is cleared through the GU
+	clearArea(0);
 }
 
 /* change the audio volume setting */
@@ -789,44 +687,44 @@ void plat_update_volume(int has_changed, int is_up)
 /* prepare for MD screen mode change */
 void emu_video_mode_change(int start_line, int line_count, int start_col, int col_count)
 {
-	int h43 = (col_count  >= 192 ? 320 : col_count); // ugh, mind GG...
-	int v43 = (line_count >= 192 ? Pico.m.pal ? 240 : 224 : line_count);
-
 	out_y = start_line; out_x = start_col;
 	out_h = line_count; out_w = col_count;
 
-	if (col_count == 248) // mind aspect ratio when blanking 1st column
+	if (col_count == 248) // mind aspect ration when blanking 1st column
 		col_count = 256;
 
 	switch (currentConfig.vscaling) {
-	case EOPT_VSCALE_FULL:
-		line_count = v43;
+	case EOPT_VSCALE_43:
+		// ugh, mind GG...
+		if (line_count >= 160)
+			line_count = (Pico.m.pal ? 240 : 224);
 		vscale = (float)270/line_count;
 		break;
-	case EOPT_VSCALE_NOBORDER:
+	case EOPT_VSCALE_FULL:
 		vscale = (float)270/line_count;
 		break;
 	default:
 		vscale = 1;
 		break;
 	}
-
 	switch (currentConfig.scaling) {
 	case EOPT_SCALE_43:
-		hscale = (vscale*h43)/col_count;
-		break;
-	case EOPT_SCALE_STRETCH:
-		hscale = (vscale*h43/2 + 480/2)/col_count;
+		hscale = (float)360/col_count;
 		break;
 	case EOPT_SCALE_WIDE:
+		hscale = (float)420/col_count;
+		break;
+	case EOPT_SCALE_FULL:
 		hscale = (float)480/col_count;
 		break;
 	default:
-		hscale = vscale;
+		hscale = 1;
 		break;
 	}
 
 	vidResetMode();
+	if (col_count < 320)	// clear borders from h40 remnants
+		clearArea(1);
 }
 
 /* render one frame in RGB */
@@ -839,16 +737,11 @@ void pemu_forced_frame(int no_scale, int do_emu)
 	emu_cmn_forced_frame(no_scale, do_emu, g_screen_ptr);
 }
 
-/* clear all video buffers to remove remnants in borders */
-void plat_video_clear_buffers(void)
-{
-	// not needed since output buffer is cleared in flip anyway
-}
-
 /* change the platform output rendering */
 void plat_video_toggle_renderer(int change, int is_menu_call)
 {
 	change_renderer(change);
+	clearArea(1);
 
 	if (is_menu_call)
 		return;
@@ -877,6 +770,7 @@ void plat_video_loop_prepare(void)
 {
 	apply_renderer();
 	vidResetMode();
+	clearArea(1);
 }
 
 /* prepare for entering the emulator loop */

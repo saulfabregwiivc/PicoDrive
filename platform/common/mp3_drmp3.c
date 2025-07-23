@@ -1,6 +1,6 @@
 /*
  * MP3 decoding using dr_mp3
- * (C) irixxxx, 2020
+ * (C) kub, 2020
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.
@@ -15,10 +15,6 @@
 #define __acrt_iob_func __acrt_iob_func2
 #define _wfopen_s(p,m)	NULL
 #define _wfopen(p,m)	NULL
-#endif
-#ifdef __GP2X__
-#define mp3dec_decode _mp3dec_decode
-#define mp3dec_start _mp3dec_start
 #endif
 #define DR_MP3_IMPLEMENTATION
 #include "dr_libs/dr_mp3.h"

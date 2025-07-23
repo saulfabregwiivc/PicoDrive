@@ -1,7 +1,6 @@
 /*
  * cuefile handling
  * (C) notaz, 2008
- * (C) irixxxx, 2020-2023
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.
@@ -71,23 +70,23 @@ static int get_token(const char *buff, char *dest, int len)
 static int get_ext(const char *fname, char ext[4],
 	char *base, size_t base_size)
 {
-	size_t pos = 0;
-	char *p;
+	int len, pos = 0;
 	
-	ext[0] = 0;
-	if (!(p = strrchr(fname, '.')))
-		return -1;
-	pos = p - fname;
+	len = strrchr(fname, '.') - fname;
+	if (len > 0)
+		pos = len;
 
 	strncpy(ext, fname + pos + 1, 4/*sizeof(ext)*/-1);
 	ext[4/*sizeof(ext)*/-1] = '\0';
 
 	if (base != NULL && base_size > 0) {
-		if (pos >= base_size)
+		if (pos + 1 < base_size)
 			pos = base_size - 1;
 
-		memcpy(base, fname, pos);
-		base[pos] = 0;
+		len = (pos < len) ? pos : len;
+
+		memcpy(base, fname, len);
+		base[len] = 0;
 	}
 	return pos;
 }
@@ -173,16 +172,19 @@ cd_data_t *chd_parse(const char *fname)
 		}
 		memset(&data->tracks[count], 0, sizeof(data->tracks[0]));
 
-		if (count == 1)
+		if (count == 1) {	// binary code
 			data->tracks[count].fname = strdup(fname);
-	        if (!strcmp(type, "MODE1_RAW") || !strcmp(type, "MODE2_RAW")) {
-		        data->tracks[count].type = CT_BIN;
-	        } else if (!strcmp(type, "MODE1") || !strcmp(type, "MODE2_FORM1")) {
-			data->tracks[count].type = CT_ISO;
-		} else if (!strcmp(type, "AUDIO")) {
+		        if (!strcmp(type, "MODE1_RAW") || !strcmp(type, "MODE2_RAW")) {
+			        data->tracks[count].type = CT_BIN;
+		        } else if (!strcmp(type, "MODE1") || !strcmp(type, "MODE2_FORM1")) {
+				data->tracks[count].type = CT_ISO;
+			} else
+				break;
+		} else {		// audio
+			if (strcmp(type, "AUDIO"))
+				break;
 			data->tracks[count].type = CT_CHD;
-		} else
-			break;
+		}
 
 		data->tracks[count].pregap = pregap;
 		if (pgtype[0] != 'V')	// VAUDIO includes pregap in file
@@ -219,17 +221,17 @@ cd_data_t *cue_parse(const char *fname)
 	if (fname == NULL || (fname_len = strlen(fname)) == 0)
 		return NULL;
 
-	ret = get_ext(fname, ext, cue_base, sizeof(cue_base) - 4);
+	ret = get_ext(fname, ext, cue_base, sizeof(cue_base));
 	if (strcasecmp(ext, "cue") == 0) {
 		f = fopen(fname, "r");
 	}
-	else if (strcasecmp(ext, "chd") != 0) {
+	else {
 		// not a .cue, try one with the same base name
-		if (0 < ret && ret < sizeof(cue_base)) {
-			strcpy(cue_base + ret, ".cue");
+		if (ret + 3 < sizeof(cue_base)) {
+			strcpy(cue_base + ret, "cue");
 			f = fopen(cue_base, "r");
 			if (f == NULL) {
-				strcpy(cue_base + ret, ".CUE");
+				strcpy(cue_base + ret, "CUE");
 				f = fopen(cue_base, "r");
 			}
 		}
@@ -342,21 +344,16 @@ file_ok:
 					else if (strcasecmp(ext, "wav") == 0)
 						data->tracks[count].type = CT_WAV;
 					else if (strcasecmp(ext, "bin") == 0)
-						data->tracks[count].type = CT_RAW;
+						data->tracks[count].type = CT_BIN;
 					else {
 						elprintf(EL_STATUS, "unhandled audio format: \"%s\"",
 							data->tracks[count].fname);
 					}
 				}
-				else if (data->tracks[count-1].type & CT_AUDIO)
+				else
 				{
 					// propagate previous
 					data->tracks[count].type = data->tracks[count-1].type;
-				}
-				else
-				{
-					// assume raw binary data
-					data->tracks[count].type = CT_RAW;
 				}
 			}
 			else {
@@ -415,19 +412,6 @@ file_ok:
 			ret = sscanf(buff2, "%d:%d:%d", &m, &s, &f);
 			if (ret != 3) continue;
 			data->tracks[count].sector_xlength = m*60*75 + s*75 + f;
-		}
-		else if (BEGINS(buff, "REM NOLOOP")) // MEGASD "extension"
-		{
-			data->tracks[count].loop = -1;
-		}
-		else if (BEGINS(buff, "REM LOOP")) // MEGASD "extension"
-		{
-			int lba;
-			get_token(buff+8, buff2, sizeof(buff2));
-			ret = sscanf(buff2, "%d", &lba);
-			if (ret != 1) lba = 0;
-			data->tracks[count].loop_lba = lba;
-			data->tracks[count].loop = 1;
 		}
 		else if (BEGINS(buff, "REM"))
 			continue;

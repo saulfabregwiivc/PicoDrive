@@ -1,7 +1,6 @@
 /*
  * some color conversion and blitting routines
  * (C) notaz, 2006-2009
- * (C) irixxxx, 2020-2023
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.
@@ -145,7 +144,7 @@ vidcpy_8bit:
     mov     r12, r3, lsl #16    @ h
 
 vidCpy8bit_loop_out:
-    movs    r6, lr, lsr #5
+    lsrs    r6, lr, #5
 @   beq     vidCpy8bit_loop_end
 vidCpy8bit_loop:
     subs    r6, r6, #1
@@ -200,7 +199,7 @@ vidcpy_8bit_rot:
     mov     r8, #328
 vidCpy8bitrot_loop_out:
     mov     r10, r0
-    movs    r9, lr, lsr #2
+    lsrs    r9, lr, #2
 @   beq     vidCpy8bitrot_loop_end
 vidCpy8bitrot_loop:
     mov     r6, r1

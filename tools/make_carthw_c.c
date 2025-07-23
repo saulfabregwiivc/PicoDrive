@@ -39,8 +39,6 @@ int main(int argc, char *argv[])
 			strcpy(p, "[]");
 
 		for (; *p != 0; p++) {
-			if (!quote && *p == '#')
-				break;
 			if (!quote && isspace(*p))
 				continue;
 			if (*p == '"') {

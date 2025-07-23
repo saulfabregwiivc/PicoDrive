@@ -49,7 +49,6 @@ static int handle_mp3(const char *fname, int index)
     return -1;
   }
 
-  track->type = CT_MP3;
   track->fd = tmp_file;
   track->offset = 0;
 
@@ -93,6 +92,8 @@ int load_cd_image(const char *cd_img_name, int *type)
   if (PicoCDLoadProgressCB != NULL)
     PicoCDLoadProgressCB(cd_img_name, 1);
 
+  Pico_mcd->cdda_type = CT_UNKNOWN;
+
   /* is this a .cue? */
   cue_data = cue_parse(cd_img_name);
   if (cue_data != NULL) {
@@ -113,11 +114,10 @@ int load_cd_image(const char *cd_img_name, int *type)
   }
   tracks[0].fd = pmf;
   tracks[0].fname = strdup(cd_img_name);
-  tracks[0].type = *type;
 
   if (*type == CT_ISO)
-       cd_img_sectors = pmf->size >> 11;  // size in sectors
-  else cd_img_sectors = pmf->size / 2352;
+       cd_img_sectors = pmf->size >>= 11;  // size in sectors
+  else cd_img_sectors = pmf->size /= 2352;
 
   // cdd.c operates with lba - 150
   tracks[0].start = 0;
@@ -125,8 +125,8 @@ int load_cd_image(const char *cd_img_name, int *type)
   tracks[0].offset = 0;
 
   sprintf_lba(tmp_ext, sizeof(tmp_ext), 0);
-  elprintf(EL_STATUS, "Track  1: %s %9i %s %s",
-    tmp_ext, tracks[0].end, tracks[0].type ? "AUDIO" : "DATA ", cd_img_name);
+  elprintf(EL_STATUS, "Track  1: %s %9i DATA  %s",
+    tmp_ext, tracks[0].end, cd_img_name);
 
   lba = cd_img_sectors;
 
@@ -184,25 +184,15 @@ int load_cd_image(const char *cd_img_name, int *type)
         // overriden by custom cue command
         length = cue_data->tracks[n].sector_xlength;
 
-      tracks[index].type = cue_data->tracks[n].type;
+      Pico_mcd->cdda_type = cue_data->tracks[n].type;
 
       tracks[index].start = lba;
       lba += length;
       tracks[index].end = lba;
 
-      // weird MEGASD cue file extensions
-      tracks[index].loop = cue_data->tracks[n].loop;
-      tracks[index].loop_lba = cue_data->tracks[n].loop_lba;
-
       sprintf_lba(tmp_ext, sizeof(tmp_ext), tracks[index].start);
-      elprintf(EL_STATUS, "Track %2i: %s %9i %s %s", n, tmp_ext, length,
-          tracks[index].type ? "AUDIO" : "DATA ",
+      elprintf(EL_STATUS, "Track %2i: %s %9i AUDIO %s", n, tmp_ext, length,
           cue_data->tracks[n].fname ? cue_data->tracks[n].fname : "");
-
-      if (tracks[index].end > 99*60*75-151) {
-        tracks[index].end = 99*60*75-151;
-        break;
-      }
     }
     goto finish;
   }
@@ -255,7 +245,7 @@ int load_cd_image(const char *cd_img_name, int *type)
         lba += length;
         tracks[index].end = lba;
 
-        tracks[index].type = CT_MP3;
+        Pico_mcd->cdda_type = CT_MP3;
 
         sprintf_lba(tmp_ext, sizeof(tmp_ext), tracks[index].start);
         elprintf(EL_STATUS, "Track %2i: %s %9i AUDIO - %s",
@@ -268,10 +258,6 @@ int load_cd_image(const char *cd_img_name, int *type)
     }
     if (ret <= 0 && i > 1)
       missed++;
-    else if (tracks[index].end > 99*60*75-151) {
-      tracks[index].end = 99*60*75-151;
-      break;
-    }
   }
 
 finish:

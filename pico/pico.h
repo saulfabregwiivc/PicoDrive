@@ -77,30 +77,22 @@ extern void *p32x_bios_g, *p32x_bios_m, *p32x_bios_s;
 #define POPT_DIS_FM_SSGEG   (1<<23)
 #define POPT_EN_FM_DAC      (1<<24) //x00 0000
 #define POPT_EN_FM_FILTER   (1<<25)
-#define POPT_EN_KBD         (1<<26)
 
 #define PAHW_MCD    (1<<0)
 #define PAHW_32X    (1<<1)
 #define PAHW_SVP    (1<<2)
 #define PAHW_PICO   (1<<3)
-
 #define PAHW_SMS    (1<<4)
-#define PAHW_GG     (1<<5)
-#define PAHW_SG     (1<<6)
-#define PAHW_SC     (1<<7)
-#define PAHW_8BIT   (PAHW_SMS|PAHW_GG|PAHW_SG|PAHW_SC)
 
 #define PHWS_AUTO   0
 #define PHWS_GG     1
 #define PHWS_SMS    2
 #define PHWS_SG     3
-#define PHWS_SC     4
 
 #define PQUIRK_FORCE_6BTN       (1<<0)
 #define PQUIRK_BLACKTHORNE_HACK (1<<1)
 #define PQUIRK_WWFRAW_HACK      (1<<2)
 #define PQUIRK_MARSCHECK_HACK   (1<<3)
-#define PQUIRK_NO_Z80_BUS_LOCK  (1<<4)
 
 // the emulator is configured and some status is reported
 // through this global state (not saved in savestates)
@@ -108,26 +100,20 @@ typedef struct PicoInterface
 {
 	unsigned int opt; // POPT_* bitfield
 
-	unsigned short pad[4];         // Joypads, format is MXYZ SACB RLDU
-	unsigned short padInt[4];      // internal copy
-	unsigned short AHW;            // active addon hardware: PAHW_* bitfield
-
-	unsigned short kbd;            // SC-3000 or Pico Keyboard
-	short mouse[4];                // x,y mouse coordinates
-	short mouseInt[4];             // internal copy
-	short gunx, guny;              // light gun offsets
-
-	unsigned short quirks;         // game-specific quirks: PQUIRK_*
-	unsigned short overclockM68k;  // overclock the emulated 68k, in %
-
-	unsigned short filter;         // softscale filter type
+	unsigned short pad[4];     // Joypads, format is MXYZ SACB RLDU
+	unsigned short padInt[4];  // internal copy
+	unsigned short AHW;        // active addon hardware: PAHW_* bitfield
 
 	unsigned short skipFrame;      // skip rendering frame, but still do sound (if enabled) and emulation stuff
 	unsigned short regionOverride; // override the region detection 0: auto, 1: Japan NTSC, 2: Japan PAL, 4: US, 8: Europe
 	unsigned short autoRgnOrder;   // packed priority list of regions, for example 0x148 means this detection order: EUR, USA, JAP
 	unsigned int hwSelect;         // hardware preselected via option menu
 	unsigned int mapper;           // mapper selection for SMS, 0 = auto
-	unsigned int tmsPalette;       // palette used by SMS in TMS graphic modes
+
+	unsigned short quirks;         // game-specific quirks: PQUIRK_*
+	unsigned short overclockM68k;  // overclock the emulated 68k, in %
+
+	unsigned short filter;         // softscale filter type
 
 	int sndRate;                   // rate in Hz
 	int sndFilterAlpha;            // Low pass sound filter alpha (Q16)
@@ -156,44 +142,19 @@ void PicoGetInternal(pint_t which, pint_ret_t *ret);
 struct PicoEState;
 
 // pico.c
-#define XPCM_BUFFER_SIZE 64
-enum {
-  PKEY_RELEASED = 0,
-  PKEY_DOWN,
-  PKEY_UP,
-};
-enum {
-  PSHIFT_RELEASED = 0,
-  PSHIFT_DOWN,
-  PSHIFT_UP_HELD_DOWN,
-  PSHIFT_RELEASED_HELD_DOWN,
-  PSHIFT_UP
-};
-typedef struct
-{
-    uint8_t i;
-    uint8_t mode;
-    uint8_t neg;
-    uint8_t has_read;
-    uint8_t caps_lock;
-    uint8_t has_caps_lock;
-    uint32_t mem;
-    uint64_t start_time_keydown;
-    uint64_t time_keydown;
-    uint8_t key_state;
-    uint8_t shift_state;
-    uint8_t active;
-} picohw_kb;
+#define XPCM_BUFFER_SIZE (320+160)
 typedef struct
 {
 	int pen_pos[2];
 	int page;
+	// internal
 	int fifo_bytes;      // bytes in FIFO
+	int fifo_bytes_prev;
+	int fifo_line_bytes; // float part, << 16
+	int line_counter;
 	unsigned short r1, r12;
-	unsigned int reserved[3];
 	unsigned char xpcm_buffer[XPCM_BUFFER_SIZE+4];
 	unsigned char *xpcm_ptr;
-	picohw_kb kb;
 } picohw_state;
 extern picohw_state PicoPicohw;
 
@@ -256,6 +217,7 @@ void vidConvCpyRGB565(void *to, void *from, int pixels);
 #endif
 void PicoDoHighPal555(int sh, int line, struct PicoEState *est);
 // internals, NB must keep in sync with ASM draw functions
+#define PDRAW_SPRITES_MOVED (1<<0) // SAT address modified
 #define PDRAW_WND_DIFF_PRIO (1<<1) // not all window tiles use same priority
 #define PDRAW_PARSE_SPRITES (1<<2) // SAT needs parsing
 #define PDRAW_INTERLACE     (1<<3)
@@ -269,10 +231,6 @@ void PicoDoHighPal555(int sh, int line, struct PicoEState *est);
 #define PDRAW_30_ROWS      (1<<11) // 30 rows mode (240 lines)
 #define PDRAW_32X_SCALE    (1<<12) // scale CLUT layer for 32X
 #define PDRAW_SMS_BLANK_1  (1<<13) // 1st column blanked
-#define PDRAW_BGC_DMA      (1<<14) // in background color DMA
-#define PDRAW_SOFTSCALE    (1<<15) // H32 upscaling
-#define PDRAW_SYNC_NEEDED  (1<<16) // redraw needed
-#define PDRAW_SYNC_NEXT    (1<<17) // redraw next frame
 extern int rendstatus_old;
 extern int rendlines;
 
@@ -302,7 +260,7 @@ void Pico32xSetClocks(int msh2_hz, int ssh2_hz);
 #define PICO_SSH2_HZ ((int)(7670442.0 * 2.4))
 
 // sound.c
-extern void (*PsndMix_32_to_16)(s16 *dest, s32 *src, int count);
+extern void (*PsndMix_32_to_16l)(s16 *dest, s32 *src, int count);
 void PsndRerate(int preserve_state);
 
 // media.c
@@ -324,11 +282,9 @@ enum cd_track_type
   CT_ISO = 1,	/* 2048 B/sector */
   CT_BIN = 2,	/* 2352 B/sector */
   // audio tracks
-  CT_AUDIO = 8,
-  CT_RAW = CT_AUDIO | 1,
-  CT_CHD = CT_AUDIO | 2,
-  CT_MP3 = CT_AUDIO | 3,
-  CT_WAV = CT_AUDIO | 4,
+  CT_MP3 = 3,
+  CT_WAV = 4,
+  CT_CHD = 5,
 };
 
 typedef struct
@@ -337,7 +293,6 @@ typedef struct
 	int pregap;		/* pregap for current track */
 	int sector_offset;	/* in current file */
 	int sector_xlength;
-	int loop, loop_lba;	/* MEGASD extensions */
 	enum cd_track_type type;
 } cd_track_t;
 
@@ -352,7 +307,6 @@ enum media_type_e PicoLoadMedia(const char *filename,
   const unsigned char *rom, unsigned int romsize,
   const char *carthw_cfg_fname,
   const char *(*get_bios_filename)(int *region, const char *cd_fname),
-  const char *(*get_msu_filename)(const char *cd_fname),
   void (*do_region_override)(const char *media_filename));
 int PicoCdCheck(const char *fname_in, int *pregion);
 
@@ -363,12 +317,8 @@ enum input_device {
   PICO_INPUT_NOTHING,
   PICO_INPUT_PAD_3BTN,
   PICO_INPUT_PAD_6BTN,
-  PICO_INPUT_MOUSE,
-  PICO_INPUT_LIGHT_GUN,
-  PICO_INPUT_JUSTIFIER,
   PICO_INPUT_PAD_TEAM,
   PICO_INPUT_PAD_4WAY,
-  PICO_INPUT_COUNT
 };
 void PicoSetInputDevice(int port, enum input_device device);
 

@@ -1,7 +1,6 @@
 /*
  * Support for a few cart mappers and some protection.
  * (C) notaz, 2008-2011
- * (C) irixxxx, 2021-2024
  *
  * This work is licensed under the terms of MAME license.
  * See COPYING file in the top-level directory.
@@ -75,7 +74,7 @@ static void carthw_ssf2_statef(void)
   int i, reg;
   for (i = 1; i < 8; i++) {
     reg = carthw_ssf2_banks[i];
-    carthw_ssf2_banks[i] = ~reg;
+    carthw_ssf2_banks[i] = i;
     carthw_ssf2_write8(0xa130f1 | (i << 1), reg);
   }
 }
@@ -134,7 +133,7 @@ static carthw_state_chunk carthw_Xin1_state[] =
 	{ 0,            0,                         NULL }
 };
 
-// TODO: reads should also work, but then we need to handle open bus
+// TODO: test a0, reads, w16
 static void carthw_Xin1_write8(u32 a, u32 d)
 {
 	if ((a & 0xffff00) != 0xa13000) {
@@ -142,23 +141,12 @@ static void carthw_Xin1_write8(u32 a, u32 d)
 		return;
 	}
 
-	carthw_Xin1_do(a, 0x3e, 16);
-}
-
-static void carthw_Xin1_write16(u32 a, u32 d)
-{
-  if ((a & 0xffff00) != 0xa13000) {
-    PicoWrite16_io(a, d);
-    return;
-  }
-
-  carthw_Xin1_write8(a + 1, d);
+	carthw_Xin1_do(a, 0x3f, 16);
 }
 
 static void carthw_Xin1_mem_setup(void)
 {
-	cpu68k_map_set(m68k_write8_map,  0xa10000, 0xa1ffff, carthw_Xin1_write8, 1);
-	cpu68k_map_set(m68k_write16_map, 0xa10000, 0xa1ffff, carthw_Xin1_write16, 1);
+	cpu68k_map_set(m68k_write8_map, 0xa10000, 0xa1ffff, carthw_Xin1_write8, 1);
 }
 
 static void carthw_Xin1_reset(void)
@@ -737,42 +725,6 @@ void carthw_sf004_startup(void)
   carthw_chunks     = carthw_sf00x_state;
 }
 
-/* Simple protection through reading flash ID */
-static int flash_writecount;
-
-static carthw_state_chunk carthw_flash_state[] =
-{
-  { CHUNK_CARTHW, sizeof(flash_writecount), &flash_writecount },
-  { 0,            0,                        NULL }
-};
-
-static u32 PicoRead16_flash(u32 a) { return (a&6) ? 0x2257 : 0x0020; }
-
-static void PicoWrite16_flash(u32 a, u32 d)
-{
-  int banksz = (1<<M68K_MEM_SHIFT)-1;
-  switch (++flash_writecount) {
-    case 3: cpu68k_map_set(m68k_read16_map, 0, banksz, PicoRead16_flash, 1);
-            break;
-    case 4: cpu68k_map_read_mem(0, banksz, Pico.rom, 0);
-            flash_writecount = 0;
-            break;
-  }
-}
-
-static void carthw_flash_mem_setup(void)
-{
-  cpu68k_map_set(m68k_write16_map, 0, 0x7fffff, PicoWrite16_flash, 1);
-}
-
-void carthw_flash_startup(void)
-{
-  elprintf(EL_STATUS, "Flash prot emu startup");
-
-  PicoCartMemSetup   = carthw_flash_mem_setup;
-  carthw_chunks      = carthw_flash_state;
-}
-
 /* Simple unlicensed ROM protection emulation */
 static struct {
   u32 addr;
@@ -1010,9 +962,7 @@ static void carthw_lk3_mem_setup(void)
 
 static void carthw_lk3_statef(void)
 {
-  int bank = carthw_lk3_regs.bank >> 15;
-  carthw_lk3_regs.bank = -1;
-  PicoWrite8_plk3b(0x700000, bank);
+  PicoWrite8_plk3b(0x700000, carthw_lk3_regs.bank >> 15);
 }
 
 static void carthw_lk3_unload(void)
@@ -1163,55 +1113,6 @@ void carthw_smw64_startup(void)
   PicoResetHook     = carthw_smw64_reset;
   PicoLoadStateHook = carthw_smw64_statef;
   carthw_chunks     = carthw_smw64_state;
-}
-
-/* J-Cart */
-unsigned char carthw_jcart_th;
-
-static carthw_state_chunk carthw_jcart_state[] =
-{
-  { CHUNK_CARTHW, sizeof(carthw_jcart_th), &carthw_jcart_th },
-  { 0,            0,                       NULL }
-};
-
-static void carthw_jcart_write8(u32 a, u32 d)
-{
-  carthw_jcart_th = (d&1) << 6;
-}
-
-static void carthw_jcart_write16(u32 a, u32 d)
-{
-  carthw_jcart_write8(a+1, d);
-}
-
-static u32 carthw_jcart_read8(u32 a)
-{
-  u32 v = PicoReadPad(2 + (a&1), 0x3f | carthw_jcart_th);
-  // some carts additionally have an EEPROM; SDA is also readable in this range
-  if (Pico.m.sram_reg & SRR_MAPPED)
-    v |= EEPROM_read() & 0x80; // SDA is always on bit 7 for J-Carts
-  return v;
-}
-
-static u32 carthw_jcart_read16(u32 a)
-{
-  return carthw_jcart_read8(a) | (carthw_jcart_read8(a+1) << 8);
-}
-
-static void carthw_jcart_mem_setup(void)
-{
-  cpu68k_map_set(m68k_write8_map,  0x380000, 0x3fffff, carthw_jcart_write8, 1);
-  cpu68k_map_set(m68k_write16_map, 0x380000, 0x3fffff, carthw_jcart_write16, 1);
-  cpu68k_map_set(m68k_read8_map,  0x380000, 0x3fffff, carthw_jcart_read8, 1);
-  cpu68k_map_set(m68k_read16_map, 0x380000, 0x3fffff, carthw_jcart_read16, 1);
-}
-
-void carthw_jcart_startup(void)
-{
-  elprintf(EL_STATUS, "J-Cart startup");
-
-  PicoCartMemSetup  = carthw_jcart_mem_setup;
-  carthw_chunks     = carthw_jcart_state;
 }
 
 // vim:ts=2:sw=2:expandtab
